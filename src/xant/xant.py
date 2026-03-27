@@ -15,7 +15,7 @@ from scipy.ndimage import map_coordinates, spline_filter
 from scipy.spatial.transform import Rotation
 
 from . import conversions, polarization, ureg
-from .utils import apply_rotation
+from .utils import apply_rotation, fast_nearest_indices
 
 warnings.filterwarnings("ignore")
 
@@ -170,114 +170,118 @@ class Antenna:
         return operated_ant
 
     # Private methods for interpolation
-    def _spline_filter(self):
+    def _spline_filter(self,order=3,mode="nearest",**kwargs):
         """"""
         if self.__spline_filter is None and isinstance(self.data, xr.DataArray):
-            self.__spline_filter = spline_filter(
-                self.data.values(),
+            # 1. Compute coefficients in the ORIGINAL data order
+            
+            srcdata = self.data.transpose("polarization", ...)
+            raw_vals = srcdata.values
+            if hasattr(raw_vals, "magnitude"):
+                raw_vals = raw_vals.magnitude
+            
+            # We still loop over polarization to keep it 2D/3D spatial
+            # but we keep the result as an xarray object
+            coeffs_raw = np.array([
+                spline_filter(raw_vals[i, ...], mode=mode, order=order,**kwargs)
+                for i in range(raw_vals.shape[0])
+            ])
+            
+            # 2. Wrap it back into a DataArray with the same dims as self.data
+            self.__spline_filter = xr.DataArray(
+                coeffs_raw, 
+                dims=srcdata.dims, 
+                coords=srcdata.coords
             )
+        return self.__spline_filter
 
     def _interp(self, order=3, **kwargs):
-        # First check if a function and pass to that
         if isinstance(self.data, AntennaFunction):
-            data = self.data.antenna_callable(**kwargs)
-        else:
-            # Transposed data
-            req_dims = list(kwargs.keys())
-            tpos = list(set(self.data.dims) - set(req_dims)) + req_dims
-            srcdata = self.data.transpose(*tpos)
-            dtype = srcdata.dtype
+            return self.data.antenna_callable(**kwargs)
 
-            # Get indexes/"pixels"
-            idxs = []
-            for k, v in kwargs.items():
-                # First be sure dimension is not a singleton
-                if self.data.coords[k].size == 1:
-                    idxs.append(xr.zeros_like(v))
-                # If sampling is uniform get point relative to grid
-                elif np.all(
-                    np.isclose(
-                        self.data.coords[k].diff(k).values.astype(np.float64),
-                        self.data.coords[k].diff(k)[0].astype(np.float64),
-                    )
-                ):
-                    dv = self.data.coords[k].diff(k)[0]
-                    min = self.data.coords[k].min()
-                    if isinstance(v.data, pint.Quantity):
-                        units = v.data.units
-                        if isinstance(dv, xr.DataArray):
-                            dv.data = dv.data * units
-                        else:
-                            dv *= units
-                        if isinstance(min, xr.DataArray):
-                            min.data = min.data * units
-                        else:
-                            min *= units
+        # 1. STRIP UNITS AND METADATA IMMEDIATELY
+        # Pre-process all kwargs into raw float64 magnitudes in base units
+        clean_kwargs = OrderedDict()
+        for k, v in kwargs.items():
+            if hasattr(v, "data") and isinstance(v.data, pint.Quantity):
+                clean_kwargs[k] = v.data.to_base_units().magnitude
+            elif isinstance(v, pint.Quantity):
+                clean_kwargs[k] = v.to_base_units().magnitude
+            else:
+                clean_kwargs[k] = np.asarray(v)
 
-                    idxs.append((v - min) / dv)
+        req_dims = list(clean_kwargs.keys())
+        tpos = list(set(self.data.dims) - set(req_dims)) + req_dims
+        # Get filter coefficients and transpose
+        coeffs = self._spline_filter(order=order)
+        coeffs = coeffs.transpose(*tpos).values
 
-                else:
-                    # If sampling is not uniform, find nearest index
-                    pxls = []
-                    for vi in v.data.ravel():
-                        if isinstance(vi, pint.Quantity):
-                            pxls.append(
-                                abs(self.data.coords[k] - vi.to_base_units().magnitude)
-                                .argmin()
-                                .item()
-                            )
-                        else:
-                            pxls.append(abs(self.data.coords[k] - vi).argmin().item())
+        idxs = []
+        for k, v_raw in clean_kwargs.items():
+            coord = self.data.coords[k]
+            coord_vals = coord.values
+            if hasattr(coord_vals, "magnitude"):
+                coord_vals = coord_vals.magnitude
 
-                    # Reshape Pixels
-                    pxls = np.array(pxls).reshape(v.shape)
+            # Case A: Singleton dimension
+            if coord.size == 1:
+                idxs.append(np.zeros_like(v_raw))
+                continue
 
-                    # Slice for coord
-                    slc = [0] * len(v.dims)
-                    slc[v.dims.index(k)] = slice(None)
+            # Case B: Uniform Grid
+            # We check if the diffs are all the same
+            diffs = np.diff(coord_vals)
+            if np.allclose(diffs, diffs[0]):
+                dv = diffs[0]
+                mn = coord_vals.min()
+                idxs.append((v_raw - mn) / dv)
+            
+            # Case C: Monotonic but Non-Uniform
+            elif np.all(diffs > 0) or np.all(diffs < 0):
+                # Find insertion point
+                side = 'left' if diffs[0] > 0 else 'right'
+                idx = np.searchsorted(coord_vals, v_raw, side=side)
+                # Clip to bounds and adjust for nearest neighbor
+                idx = np.clip(idx, 1, len(coord_vals) - 1)
+                # Check if left or right is closer
+                left = coord_vals[idx - 1]
+                right = coord_vals[idx]
+                idx = np.where(np.abs(v_raw - left) < np.abs(v_raw - right), idx - 1, idx)
+                idxs.append(idx.astype(np.float64))
 
-                    # New coord
-                    coord = self.data.coords[k][pxls[slc]]
+            # Case D: Truly Arbitrary (Parallelized via Numba)
+            else:
+                idxs.append(fast_nearest_indices(coord_vals, v_raw).astype(np.float64))
+        pixel_coords = [idx.ravel() for idx in idxs]
 
-                    # Change all kwarg coords
-                    for ki, vi in kwargs.items():
-                        kwargs[ki] = vi.assign_coords({k: coord})
+        # Loop over polarization coordinate and interpolate
+        data = []
 
-                    # Pixels data array
-                    pxls = xr.DataArray(pxls, dims=v.dims, coords=v.coords)
+        for i in range(coeffs.shape[0]):
+            data.append(
+                map_coordinates(
+                    coeffs[i,...],
+                    pixel_coords,
+                    order=order,
+                    prefilter=False,
+                    mode="nearest",
+                ).reshape(idxs[0].shape),
+            )
 
-                    # Append
-                    idxs.append(pxls)
-            pixel_coords = [idx.data.ravel() for idx in idxs]
+        # Make into DataArray
+        data = np.array(data)
+        addeddims = ["polarization"]
 
-            # Loop over polarization coordinate and interpolate
-            data = []
-            for i in range(srcdata.shape[0]):
-                data.append(
-                    map_coordinates(
-                        srcdata[i, ...],
-                        pixel_coords,
-                        output=dtype,
-                        order=order,
-                        prefilter=True,
-                        mode="nearest",
-                    ).reshape(idxs[0].shape)
-                )
+        # Assemble coords
+        coords = {}
+        for k in addeddims:
+            coords[k] = self.data.coords[k]
 
-            # Make into DataArray
-            data = np.array(data)
-            addeddims = ["polarization"]
+        interpdims = list(list(kwargs.values())[0].dims)
+        for k in interpdims:
+            coords[k] = v.coords[k]
 
-            # Assemble coords
-            coords = {}
-            for k in addeddims:
-                coords[k] = self.data.coords[k]
-
-            interpdims = list(list(kwargs.values())[0].dims)
-            for k in interpdims:
-                coords[k] = v.coords[k]
-
-            data = xr.DataArray(data, dims=addeddims + interpdims, coords=coords)
+        data = xr.DataArray(data, dims=addeddims + interpdims, coords=coords)
 
         return data
 

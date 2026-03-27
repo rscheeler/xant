@@ -18,14 +18,17 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-"pint",
-"numpy",
-"scipy",
-"xarray",
-"matplotlib",
-"hics[geo]",
-"h3",
-"loguru"
+    "pint",
+    "numpy",
+    "scipy",
+    "xarray",
+    "matplotlib",
+    "hics[geo]",
+    "h3",
+    "loguru",
+    "numba>=0.64.0",
+    "h5py",
+    "h5netcdf",
 ]
 
 [dependency-groups]
