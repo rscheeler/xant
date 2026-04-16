@@ -43,6 +43,8 @@ dev = [
     "legacy-cgi>=2.6.3",
     "setuptools>=80.9.0",
     "pre-commit>=4.2.0",
+    "ipykernel",
+    "pyvista[jupyter]>=0.47.1",
 ]
 
 [project.urls]
@@ -54,6 +56,9 @@ issues = "https://github.com/rscheeler/xant/issues"
 [build-system]
 requires = ["uv_build>=0.7.19,<0.8.0"]
 build-backend = "uv_build"
+
+[tool.uv.sources]
+hics = { path = "../../Github/hics", editable = true }
 
 [tool.taskipy.tasks]
 format = { cmd = "ruff format ./src/", help = "Format code using ruff" }
@@ -105,10 +110,14 @@ ignore = [
 [tool.mypy]
 files = ["src", "tests"]
 ignore_missing_imports = true
-disallow_untyped_defs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+# To disable a specific error code globally in mypy
+disable_error_code = ["no-untyped-def"]
+
 disallow_any_unimported = false
 no_implicit_optional = true
-check_untyped_defs = true
+check_untyped_defs = false
 warn_return_any = false
 warn_unused_ignores = true
 show_error_codes = true

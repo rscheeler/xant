@@ -7,8 +7,8 @@ from pint import Quantity
 from scipy.spatial.transform import Rotation
 from scipy.special import jv
 
-from . import ureg
-from .xant import Antenna, AntennaFunction
+from .. import ureg
+from .core import Antenna, AntennaFunction
 from .phasedarray import AntennaArray
 
 
@@ -45,7 +45,10 @@ class Dipole(Antenna):
         )
         dims = ("polarization", "frequency", "phi", "theta")
         coords = dict(
-            polarization=["thetapol", "phipol"], frequency=frequency, phi=phi, theta=theta
+            polarization=["thetapol", "phipol"],
+            frequency=frequency,
+            phi=phi,
+            theta=theta,
         )
         antenna_function = AntennaFunction(dims, coords, self._antenna_func, "phitheta")
 
@@ -381,7 +384,10 @@ class DipoleAboveGround(Antenna):
 
         # Make the function
         antenna_function = AntennaFunction(
-            element.data.dims, element.data.coords, self._antenna_func, "phitheta"
+            element.data.dims,
+            element.data.coords,
+            self._antenna_func,
+            "phitheta",
         )
 
         super().__init__(antenna_function, hcs)
@@ -434,7 +440,10 @@ class RectangularAperture(Antenna):
         )
         dims = ("polarization", "frequency", "phi", "theta")
         coords = dict(
-            polarization=["thetapol", "phipol"], frequency=frequency, phi=phi, theta=theta
+            polarization=["thetapol", "phipol"],
+            frequency=frequency,
+            phi=phi,
+            theta=theta,
         )
         antenna_function = AntennaFunction(dims, coords, self._antenna_func, "phitheta")
 
@@ -543,7 +552,10 @@ class TE10Aperture(Antenna):
         )
         dims = ("polarization", "frequency", "phi", "theta")
         coords = dict(
-            polarization=["thetapol", "phipol"], frequency=frequency, phi=phi, theta=theta
+            polarization=["thetapol", "phipol"],
+            frequency=frequency,
+            phi=phi,
+            theta=theta,
         )
         antenna_function = AntennaFunction(dims, coords, self._antenna_func, "phitheta")
 
@@ -652,7 +664,10 @@ class CircularAperture(Antenna):
         )
         dims = ("polarization", "frequency", "phi", "theta")
         coords = dict(
-            polarization=["thetapol", "phipol"], frequency=frequency, phi=phi, theta=theta
+            polarization=["thetapol", "phipol"],
+            frequency=frequency,
+            phi=phi,
+            theta=theta,
         )
         antenna_function = AntennaFunction(dims, coords, self._antenna_func, "phitheta")
 
@@ -675,10 +690,12 @@ class CircularAperture(Antenna):
         Z.data = Z.data.to_base_units().magnitude
 
         # Electric field components
+        max_field = 0.5
         bessel = xr.apply_ufunc(jv, 1, Z) / Z
+        # If Z is effectively 0, use the limit (0.5), otherwise calculate J1(Z)/Z
+        bessel = xr.where(Z == 0, max_field, bessel)
         etheta = np.sin(phi) * bessel
         ephi = np.cos(theta) * np.cos(phi) * bessel
-        max_field = 0.5
 
         # Set lower hemisphere to zero
         if self.truncate_lower_hemisphere:

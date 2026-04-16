@@ -1,8 +1,13 @@
 """xant - Spatial antenna analysis with xarray."""
+
+from __future__ import annotations
+
 import operator as opr
 import warnings
 from collections import OrderedDict
+from collections.abc import Callable
 from copy import deepcopy
+from numbers import Number
 from pathlib import Path
 from typing import Optional, Union
 
@@ -14,8 +19,11 @@ from loguru import logger
 from scipy.ndimage import map_coordinates, spline_filter
 from scipy.spatial.transform import Rotation
 
-from . import conversions, polarization, ureg
-from .utils import apply_rotation, fast_nearest_indices
+from .. import ureg
+from ..utils import conversions
+from ..utils.calc import fast_nearest_indices
+from ..utils.geometry import apply_rotation
+from . import polarization
 
 warnings.filterwarnings("ignore")
 
@@ -36,11 +44,11 @@ class Antenna:
 
     def __init__(
         self,
-        data: Union[str, Path, xr.DataArray, "AntennaFunction"],
+        data: Union[str, Path, xr.DataArray, AntennaFunction],
         hcs: HCS | None = None,
-    ):
+    ) -> None:
         # Make sure if str is passed implying file import that it is converted to Path object
-        if isinstance(data, str) or isinstance(data, Path):
+        if isinstance(data, (str, Path)):
             data = Path(data)
             if data.suffix == ".antnc":
                 data = xr.open_dataarray(data, engine="h5netcdf")
@@ -58,10 +66,8 @@ class Antenna:
         self.__spline_filter = None
 
     @staticmethod
-    def validate(data):
-        """
-        Validation of the data structure.
-        """
+    def validate(data: xr.DataArray) -> None:
+        """Validation of the data structure."""
         # Verify required attributes
         if not set(Antenna.REQUIRED_ATTRS).issubset(list(data.attrs.keys())):
             raise AttributeError(
@@ -70,20 +76,23 @@ class Antenna:
 
     # Properties
     @property
-    def hcs(self):
+    def hcs(self) -> HCS:
+        """Returns HCS (coordinate system) for antenna."""
         return self._hcs
 
     @hcs.setter
-    def hcs(self, value):
+    def hcs(self, value: HCS) -> None:
         # Change coordinate system
         if isinstance(value, HCS):
             self._hcs = value
         else:
-            raise ValueError("Must be a HCS instance.")
+            msg = "Must be a HCS instance."
+            raise TypeError(msg)
 
-    def move(self, hcs: HCS):
+    def move(self, hcs: HCS) -> None:
         """
-        Move antenna to coordinate system, will propagate changes if computation has been applied to antenna.
+        Move antenna to coordinate system, will propagate changes if computation has been applied to
+        antenna.
 
         Parameters
         ----------
@@ -100,10 +109,11 @@ class Antenna:
                     self.data.other.hcs = hcs
 
         else:
-            raise ValueError("Must be a CoordinateSystem instance.")
+            msg = "Must be a CoordinateSystem instance."
+            raise TypeError(msg)
 
     # Operators
-    def __math_operation__(self, other, operator):
+    def __math_operation__(self, other: Number | Antenna, operator: Callable) -> None:
         """
         Performs math operation on object.
 
@@ -112,9 +122,9 @@ class Antenna:
         """
         # Do some validation of the operation
         # Constrain addition subtraction to not work with floats
-        if not isinstance(other, Antenna):
-            if operator == opr.add or operator == opr.sub:
-                raise TypeError("Can not add constant to antenna.")
+        if not isinstance(other, Antenna) and operator in (opr.add, opr.sub):
+            msg = "Can not add constant to antenna."
+            raise TypeError(msg)
         # Can't multiply two patterns that are vector patterns
         if isinstance(other, Antenna):
             if (
@@ -130,15 +140,15 @@ class Antenna:
         if isinstance(other, Antenna):
             common_hcs = self.hcs.find_common_cs(other.hcs)
             if common_hcs is None:
-                raise ValueError("Antennas have no common coordinate system.")
+                msg = "Antennas have no common coordinate system."
+                raise ValueError(msg)
         else:
             common_hcs = self.hcs
         # Create instance of OperatorFunction which stores self and other
         func = OperatorFunction(self, other, operator)
-        # Create new antenna object with the operator function as the data input
-        operated_ant = Antenna(func, common_hcs)
+        # Return new antenna object with the operator function as the data input
 
-        return operated_ant
+        return Antenna(func, common_hcs)
 
     def __add__(self, other):
         return self.__math_operation__(other, opr.add)
@@ -158,40 +168,36 @@ class Antenna:
     def __pow__(self, other):
         return self.__math_operation__(other, opr.pow)
 
-    def sum(self, dim):
-        """
-        Sum pattern along specified dimension.
-        """
+    def sum(self, dim: str) -> Antenna:
+        """Sum pattern along specified dimension."""
         # Create instance of OperatorFunction which stores self and other
         func = OperatorFunction(self, None, "sum", is_xrda_method=True, dim=dim)
-        # Create new antenna object with the operator function as the data input
-        operated_ant = Antenna(func, self.hcs)
-
-        return operated_ant
+        # Return new antenna object with the operator function as the data input
+        return Antenna(func, self.hcs)
 
     # Private methods for interpolation
-    def _spline_filter(self,order=3,mode="nearest",**kwargs):
+    def _spline_filter(self, order=3, mode="nearest", **kwargs):
         """"""
         if self.__spline_filter is None and isinstance(self.data, xr.DataArray):
             # 1. Compute coefficients in the ORIGINAL data order
-            
+
             srcdata = self.data.transpose("polarization", ...)
             raw_vals = srcdata.values
             if hasattr(raw_vals, "magnitude"):
                 raw_vals = raw_vals.magnitude
-            
+
             # We still loop over polarization to keep it 2D/3D spatial
             # but we keep the result as an xarray object
-            coeffs_raw = np.array([
-                spline_filter(raw_vals[i, ...], mode=mode, order=order,**kwargs)
-                for i in range(raw_vals.shape[0])
-            ])
-            
+            coeffs_raw = np.array(
+                [
+                    spline_filter(raw_vals[i, ...], mode=mode, order=order, **kwargs)
+                    for i in range(raw_vals.shape[0])
+                ]
+            )
+
             # 2. Wrap it back into a DataArray with the same dims as self.data
             self.__spline_filter = xr.DataArray(
-                coeffs_raw, 
-                dims=srcdata.dims, 
-                coords=srcdata.coords
+                coeffs_raw, dims=srcdata.dims, coords=srcdata.coords
             )
         return self.__spline_filter
 
@@ -235,11 +241,11 @@ class Antenna:
                 dv = diffs[0]
                 mn = coord_vals.min()
                 idxs.append((v_raw - mn) / dv)
-            
+
             # Case C: Monotonic but Non-Uniform
             elif np.all(diffs > 0) or np.all(diffs < 0):
                 # Find insertion point
-                side = 'left' if diffs[0] > 0 else 'right'
+                side = "left" if diffs[0] > 0 else "right"
                 idx = np.searchsorted(coord_vals, v_raw, side=side)
                 # Clip to bounds and adjust for nearest neighbor
                 idx = np.clip(idx, 1, len(coord_vals) - 1)
@@ -255,21 +261,31 @@ class Antenna:
         pixel_coords = [idx.ravel() for idx in idxs]
 
         # Loop over polarization coordinate and interpolate
-        data = []
-
-        for i in range(coeffs.shape[0]):
-            data.append(
+        data = np.array(
+            [
                 map_coordinates(
-                    coeffs[i,...],
+                    coeffs[i, ...],
                     pixel_coords,
                     order=order,
                     prefilter=False,
                     mode="nearest",
-                ).reshape(idxs[0].shape),
-            )
+                ).reshape(idxs[0].shape)
+                for i in range(coeffs.shape[0])
+            ],
+        )
+
+        # for i in range(coeffs.shape[0]):
+        #     data.append(
+        #         map_coordinates(
+        #             coeffs[i, ...],
+        #             pixel_coords,
+        #             order=order,
+        #             prefilter=False,
+        #             mode="nearest",
+        #         ).reshape(idxs[0].shape),
+        #     )
 
         # Make into DataArray
-        data = np.array(data)
         addeddims = ["polarization"]
 
         # Assemble coords
@@ -427,7 +443,7 @@ class Antenna:
                 if ref_hcs is None:
                     ref_hcs = self.hcs
 
-                convert_kwargs = {**convert_kwargs, **dict(reference_hcs=ref_hcs)}
+                convert_kwargs = {**convert_kwargs, **dict(reference_cs=ref_hcs)}
 
             # Convert requested spatial dims uvw in self.hcs
             uvw = request2uvw(*requestangles, **convert_kwargs)
@@ -501,7 +517,7 @@ class Antenna:
             ref_hcs = hcs
             if ref_hcs is None:
                 ref_hcs = self.hcs
-            convert_kwargs = {**convert_kwargs, **dict(reference_hcs=ref_hcs)}
+            convert_kwargs = {**convert_kwargs, **dict(reference_cs=ref_hcs)}
         # Copy back in dims if not present for polarization transform
         if not set(conversions.COORDINATE_DIMS[data.coordinate_frame]).issubset(data.dims):
             for d in conversions.COORDINATE_DIMS[data.coordinate_frame]:

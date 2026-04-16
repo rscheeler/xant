@@ -5,8 +5,8 @@ from matplotlib import pyplot as plt
 from scipy.spatial.transform import Rotation
 
 from xant import ureg, Antenna
-from xant.common import Dipole
-from xant.phasedarray import AntennaArray, TranslatedPhase
+from xant.antenna.common import Dipole
+from xant.antenna.phasedarray import AntennaArray, TranslatedPhase
 from xant.plotting import plot_antenna_pattern
 
 if __name__ == "__main__":

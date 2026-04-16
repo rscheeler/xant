@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt
 from matplotlib import colors
 import xarray as xr
 
-from . import ureg
+from .. import ureg
 
 
 def ll2cell(row: gpd.GeoSeries, resolution: int = 5) -> str:
@@ -67,7 +67,11 @@ def add_color(row, color_col: str = None, norm=None, cmap=None) -> str:
 
 
 def ll2h3gpd(
-    h3data: xr.DataArray, resolution: int = 5, color_col: str = "mean", cmap=plt.get_cmap("viridis"), zspan: float = 40
+    h3data: xr.DataArray,
+    resolution: int = 5,
+    color_col: str = "mean",
+    cmap=plt.get_cmap("viridis"),
+    zspan: float = 40,
 ) -> gpd.GeoDataFrame:
     """
     Convert antenna data (in dimensionless power form) sampled in latitude and longitude to h3 cells
@@ -76,7 +80,10 @@ def ll2h3gpd(
 
     # Convert lat/lon to degrees
     h3data = h3data.assign_coords(
-        dict(lat=(h3data.lat * ureg.radian).data.to("degree"), lon=(h3data.lon * ureg.radian).data.to("degree"))
+        dict(
+            lat=(h3data.lat * ureg.radian).data.to("degree"),
+            lon=(h3data.lon * ureg.radian).data.to("degree"),
+        )
     )
 
     # Convert to dataframe
@@ -95,11 +102,15 @@ def ll2h3gpd(
     # Normalize the data to the range [0, 1] for color mapping
     norm = plt.Normalize(vmin=gbounds[color_col].max() - zspan, vmax=gbounds[color_col].max())
     # Get colors for each value in the column
-    gbounds["color"] = gbounds.apply(partial(add_color, color_col=color_col, norm=norm, cmap=cmap), axis=1)
+    gbounds["color"] = gbounds.apply(
+        partial(add_color, color_col=color_col, norm=norm, cmap=cmap), axis=1
+    )
     return gbounds
 
 
-def h3xr2gpd(h3xrdata: xr.DataArray, cmap=plt.get_cmap("viridis"), zspan: float = 40) -> gpd.GeoDataFrame:
+def h3xr2gpd(
+    h3xrdata: xr.DataArray, cmap=plt.get_cmap("viridis"), zspan: float = 40
+) -> gpd.GeoDataFrame:
     """
     Convert antenna data (in dimensionless power form) to GeoPandas with H3 polygons.
     """
@@ -118,5 +129,7 @@ def h3xr2gpd(h3xrdata: xr.DataArray, cmap=plt.get_cmap("viridis"), zspan: float 
     # Normalize the data to the range [0, 1] for color mapping
     norm = plt.Normalize(vmin=gdf[h3xrdata.name].max() - zspan, vmax=gdf[h3xrdata.name].max())
     # Get colors for each value in the column
-    gdf["color"] = gdf.apply(partial(add_color, color_col=h3xrdata.name, norm=norm, cmap=cmap), axis=1)
+    gdf["color"] = gdf.apply(
+        partial(add_color, color_col=h3xrdata.name, norm=norm, cmap=cmap), axis=1
+    )
     return gdf

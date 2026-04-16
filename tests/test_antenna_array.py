@@ -5,8 +5,8 @@ from hics import HCS
 from scipy.spatial.transform import Rotation
 
 from xant import ureg
-from xant.common import Dipole
-from xant.phasedarray import AntennaArray
+from xant.antenna.common import Dipole
+from xant.antenna.phasedarray import AntennaArray
 
 
 class TestArrays(unittest.TestCase):

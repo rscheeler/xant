@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections import Counter
 from copy import deepcopy
 from functools import partial
@@ -15,19 +17,20 @@ from matplotlib.patches import RegularPolygon
 from pint import Quantity
 from scipy.spatial.transform import Rotation
 
-from . import conversions, ureg
-from .xant import Antenna, AntennaFunction, concat
-from .utils import apply_rotation
+from .. import ureg
+from ..utils import conversions
+from ..utils.geometry import apply_rotation
+from .core import Antenna, AntennaFunction, concat
 
 
 class AntennaArray:
     def __init__(
         self,
-        element: Union[Antenna, "AntennaArray"],
-        coordinate_systems,
-        broadcast_elements=False,
-        steering_method=None,
-    ):
+        element: Antenna | AntennaArray,
+        coordinate_systems: list[HCS],
+        broadcast_elements: bool = False,
+        steering_method: str = None,
+    ) -> None:
         # Capture frequencies
         if isinstance(element, Antenna):
             self.frequency = element.data.frequency
@@ -48,8 +51,8 @@ class AntennaArray:
         # Check to see if elements need to be broadcasted
         rot_bools = []
         iden_quat = Rotation.from_matrix(np.eye(3)).as_quat()
-        logger.warning(f"iden_quat {iden_quat}")
-        logger.warning(f"Identity rotation id {id(iden_quat)}")
+        # logger.warning(f"iden_quat {iden_quat}")
+        # logger.warning(f"Identity rotation id {id(iden_quat)}")
         for x in [cs.rotation for cs in coordinate_systems]:
             if isinstance(x, Rotation):
                 rot_bools.append(all(x.as_quat() == iden_quat))
@@ -217,7 +220,8 @@ class AntennaArray:
         """
         if self._tpf is None:
             self._tpf = TranslatedPhase(
-                self.frequency.data, coordinate_systems=self.coordinate_systems
+                self.frequency.data,
+                coordinate_systems=self.coordinate_systems,
             )
         return self._tpf
 
@@ -249,7 +253,8 @@ class AntennaArray:
         """Returns the sum of the elements multiplied by their excitation"""
         # if self._total is None:
         self._total = (self.elements * self.excitation).sum(dim="port") / vector_norm(
-            np.abs(self.excitation), dim="port"
+            np.abs(self.excitation),
+            dim="port",
         )
         return self._total
 
@@ -260,7 +265,8 @@ class AntennaArray:
         """
         # if self._af is None:
         self._af = (self.tpf * self.excitation).sum(dim="port") / vector_norm(
-            np.abs(self.excitation), dim="port"
+            np.abs(self.excitation),
+            dim="port",
         )
         return self._af
 
@@ -517,7 +523,9 @@ class TranslatedPhase(Antenna):
             attrs=dict(units=ureg.degree),
         )
         port = xr.DataArray(
-            coordinate_systems, dims=("port",), coords=dict(port=np.arange(len(coordinate_systems)))
+            coordinate_systems,
+            dims=("port",),
+            coords=dict(port=np.arange(len(coordinate_systems))),
         )
         dims = ("polarization", "port", "frequency", "phi", "theta")
         coords = dict(polarization=["apolar"], port=port, frequency=frequency, phi=phi, theta=theta)
@@ -541,7 +549,7 @@ class TranslatedPhase(Antenna):
                 np.sin(theta) * np.cos(phi),
                 np.sin(theta) * np.sin(phi),
                 np.cos(theta) * xr.ones_like(phi),
-            ]
+            ],
         )
         sp = xr.DataArray(
             sp,
@@ -551,7 +559,7 @@ class TranslatedPhase(Antenna):
 
         # Create position data array
         port_pos = np.array(
-            [cs.origin.data.data.magnitude for cs in port.data.ravel()]
+            [cs.origin.data.data.magnitude for cs in port.data.ravel()],
         )  # assemble array
         port_pos = port_pos.reshape(list(port.shape) + [3])  # reshape
         port_pos *= port.data.ravel()[0].origin.original_units  # Convert back to quantity
@@ -600,7 +608,7 @@ def get_position_in_base(
         if not isinstance(v, xr.DataArray):
             if not isinstance(v, Quantity):
                 raise ValueError("Input must be specified as a pint.Quantity")
-            elif v.shape == ():
+            if v.shape == ():
                 # Needs to have a dimension
                 v = np.array([v.magnitude]) * v.units
             # Make xr.DataArray and assign to kwarg dict
@@ -692,22 +700,23 @@ def apply_taper(
 
         return taper_norm
 
-    elif isinstance(phased_array.element, AntennaArray):
+    if isinstance(phased_array.element, AntennaArray):
         raise NotImplementedError("Cannot taper subarrays unless they are broadcasted.")
-    else:
-        pos = phased_array.positions(reference=cs, recursive=False)
-        pos.data = pos.data.to_base_units().magnitude
-        posdim = pos.sel(position=dim)
-        # Get window
-        windowed = window.interp({dim: posdim}).drop_vars(["position", dim])
-        # Get Norm
-        taper_norm = np.linalg.norm(windowed)
-        # Normalized
-        phased_array.taper *= xr.DataArray(
-            windowed / taper_norm, dims=("port",), coords=dict(port=np.arange(windowed.size))
-        )
+    pos = phased_array.positions(reference=cs, recursive=False)
+    pos.data = pos.data.to_base_units().magnitude
+    posdim = pos.sel(position=dim)
+    # Get window
+    windowed = window.interp({dim: posdim}).drop_vars(["position", dim])
+    # Get Norm
+    taper_norm = np.linalg.norm(windowed)
+    # Normalized
+    phased_array.taper *= xr.DataArray(
+        windowed / taper_norm,
+        dims=("port",),
+        coords=dict(port=np.arange(windowed.size)),
+    )
 
-        return taper_norm
+    return taper_norm
 
 
 def steer_phase_centers(
@@ -843,7 +852,7 @@ def plot_grating_lobe_diagram(
     ax.set_xlabel("u (sin(theta)cos(phi))")
     ax.set_ylabel("v (sin(theta)sin(phi))")
     ax.set_title(
-        f"Grating Lobe Diagram\ndx={dx:.3f~#P}λ,dy={dy:.3f~#P}λ\nMax. Scan {max_scan.to('degree').magnitude}°"
+        f"Grating Lobe Diagram\ndx={dx:.3f~#P}λ,dy={dy:.3f~#P}λ\nMax. Scan {max_scan.to('degree').magnitude}°",
     )
     ax.add_patch(plt.Circle((0, 0), 1, color="C0", alpha=0.25))  # Visible region
     ax.add_patch(plt.Circle((0, 0), np.sin(max_scan), color="C0", alpha=0.25))  # Scan region
@@ -861,7 +870,7 @@ def plot_grating_lobe_diagram(
                 ax.plot(u_lobe, v_lobe, "ro", markersize=5, mec="grey", mfc="white")
                 ax.add_patch(plt.Circle((m / dx, n / dy), 1, color="grey", alpha=0.25))
                 ax.add_patch(
-                    plt.Circle((m / dx, n / dy), np.sin(max_scan), color="grey", alpha=0.25)
+                    plt.Circle((m / dx, n / dy), np.sin(max_scan), color="grey", alpha=0.25),
                 )
 
     elif lattice_type == "triangular":
@@ -875,8 +884,11 @@ def plot_grating_lobe_diagram(
                 ax.plot(u_lobe, v_lobe, "ro", markersize=5, mec="grey", mfc="white")
                 ax.add_patch(
                     plt.Circle(
-                        (m / dx, (2 * n - m) / (dy * np.sqrt(3))), 1, color="grey", alpha=0.25
-                    )
+                        (m / dx, (2 * n - m) / (dy * np.sqrt(3))),
+                        1,
+                        color="grey",
+                        alpha=0.25,
+                    ),
                 )
                 ax.add_patch(
                     plt.Circle(
@@ -884,11 +896,17 @@ def plot_grating_lobe_diagram(
                         np.sin(max_scan),
                         color="grey",
                         alpha=0.25,
-                    )
+                    ),
                 )
 
     ax.plot(
-        u_steer, v_steer, "bo", markersize=6, mec="k", mfc="white", label="Main Beam"
+        u_steer,
+        v_steer,
+        "bo",
+        markersize=6,
+        mec="k",
+        mfc="white",
+        label="Main Beam",
     )  # Main beam location
 
     ax.legend()

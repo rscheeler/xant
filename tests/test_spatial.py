@@ -4,7 +4,7 @@ import numpy as np
 import xarray as xr
 
 from xant import ureg
-from xant import conversions
+from xant.utils import conversions
 
 
 class TestSpatialTransforms(unittest.TestCase):

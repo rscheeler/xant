@@ -7,8 +7,8 @@ from hics.utils import vector_norm
 from scipy.spatial.transform import Rotation
 
 from xant import ureg
-from xant.common import DipoleAboveGround, TE10Aperture
-from xant.phasedarray import AntennaArray
+from xant.antenna.common import DipoleAboveGround, TE10Aperture
+from xant.antenna.phasedarray import AntennaArray
 
 
 class TestArrayTotalPowerPanel(unittest.TestCase):

@@ -8,7 +8,7 @@ from hics.geo.dem import llh2geocent
 from hics.utils import vector_norm
 from pint import Quantity
 
-from . import ureg
+from .. import ureg
 
 COORDINATE_DIMS = dict(
     phitheta=("phi", "theta"),

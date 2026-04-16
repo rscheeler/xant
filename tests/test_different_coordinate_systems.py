@@ -4,7 +4,7 @@ import numpy as np
 from hics import GLOBAL_CS, HCS, ureg
 from scipy.spatial.transform import Rotation
 
-from xant.common import TE10Aperture
+from xant.antenna.common import TE10Aperture
 
 
 class TestRotatedCS(unittest.TestCase):
@@ -43,7 +43,9 @@ class TestRotatedCS(unittest.TestCase):
         phi_slc = [-45] * ureg.degree
         th_slc = [0] * ureg.degree
         d0 = self.antenna.request_data(theta=th_slc, phi=phi_slc, hcs=self.mount)
-        d1 = self.antenna.request_data(theta=th_slc, phi=phi_slc + 45 * ureg.degree, hcs=self.mount2)
+        d1 = self.antenna.request_data(
+            theta=th_slc, phi=phi_slc + 45 * ureg.degree, hcs=self.mount2
+        )
 
         np.testing.assert_array_almost_equal(
             d0.sel(polarization="apolar").data, d1.sel(polarization="apolar").data

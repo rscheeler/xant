@@ -10,8 +10,8 @@ from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 import leafmap.foliumap as leafmap
 
 from . import ureg
-from .utils import round2base
-from .h3utils import h3xr2gpd
+from .utils.calc import round2base
+from .utils.h3utils import h3xr2gpd
 
 
 plt.rcParams["animation.html"] = "jshtml"
@@ -214,9 +214,15 @@ def plot_antenna_pattern(
         )
 
         ax.set_extent(extent)  # set extents
-        ax.set_xticks(np.linspace(extent[0], extent[1], 5), crs=ccrs.PlateCarree())  # set longitude indicators
-        ax.set_yticks(np.linspace(extent[2], extent[3], 7)[1:], crs=ccrs.PlateCarree())  # set latitude indicators
-        lon_formatter = LongitudeFormatter(number_format="0.2f", dateline_direction_label=True)  # format lons
+        ax.set_xticks(
+            np.linspace(extent[0], extent[1], 5), crs=ccrs.PlateCarree()
+        )  # set longitude indicators
+        ax.set_yticks(
+            np.linspace(extent[2], extent[3], 7)[1:], crs=ccrs.PlateCarree()
+        )  # set latitude indicators
+        lon_formatter = LongitudeFormatter(
+            number_format="0.2f", dateline_direction_label=True
+        )  # format lons
         lat_formatter = LatitudeFormatter(number_format="0.2f")  # format lats
         ax.xaxis.set_major_formatter(lon_formatter)  # set lons
         ax.yaxis.set_major_formatter(lat_formatter)  # set lats
@@ -234,7 +240,9 @@ def plot_antenna_pattern(
             for ax in fig.axes:
                 ax.remove()
             # Add axes in
-            ax = plt.axes(projection=osm_img.crs)  # project using coordinate reference system (CRS) of street map
+            ax = plt.axes(
+                projection=osm_img.crs
+            )  # project using coordinate reference system (CRS) of street map
             # Plot DataArray
             data.isel({animate: i}).plot(
                 transform=ccrs.PlateCarree(),  # the data's projection
@@ -244,9 +252,15 @@ def plot_antenna_pattern(
                 vmax=round2base(data.max().data.magnitude),
             )
             ax.set_extent(extent)  # set extents
-            ax.set_xticks(np.linspace(extent[0], extent[1], 5), crs=ccrs.PlateCarree())  # set longitude indicators
-            ax.set_yticks(np.linspace(extent[2], extent[3], 7)[1:], crs=ccrs.PlateCarree())  # set latitude indicators
-            lon_formatter = LongitudeFormatter(number_format="0.2f", dateline_direction_label=True)  # format lons
+            ax.set_xticks(
+                np.linspace(extent[0], extent[1], 5), crs=ccrs.PlateCarree()
+            )  # set longitude indicators
+            ax.set_yticks(
+                np.linspace(extent[2], extent[3], 7)[1:], crs=ccrs.PlateCarree()
+            )  # set latitude indicators
+            lon_formatter = LongitudeFormatter(
+                number_format="0.2f", dateline_direction_label=True
+            )  # format lons
             lat_formatter = LatitudeFormatter(number_format="0.2f")  # format lats
             ax.xaxis.set_major_formatter(lon_formatter)  # set lons
             ax.yaxis.set_major_formatter(lat_formatter)  # set lats
@@ -276,7 +290,10 @@ def plot_antenna_pattern(
         if plot_type == "line":
             data.plot.line(x=x, **kwargs, ax=ax)
         else:
-            data.plot(x=x, **{**dict(alpha=0.8, vmin=datamin, vmax=datamax, cmap=plt.cm.viridis), **kwargs})
+            data.plot(
+                x=x,
+                **{**dict(alpha=0.8, vmin=datamin, vmax=datamax, cmap=plt.cm.viridis), **kwargs},
+            )
 
         # Scale yaxis - needs to be done after plotting
         if isinstance(projection, str):
@@ -285,7 +302,10 @@ def plot_antenna_pattern(
                 ax.set_rmin(datamin)
                 rgrids = np.linspace(datamin, datamax, 5)
                 ax.set_rgrids(
-                    rgrids, labels=[""] + [f"{i}" for i in rgrids[1:-1]] + [f"{rgrids[-1]} dBi"], angle=45, fmt=None
+                    rgrids,
+                    labels=[""] + [f"{i}" for i in rgrids[1:-1]] + [f"{rgrids[-1]} dBi"],
+                    angle=45,
+                    fmt=None,
                 )
                 # Remove ylabel
                 ax.set_ylabel("")
@@ -303,9 +323,15 @@ def plot_antenna_pattern(
             )
 
             ax.set_extent(extent)  # set extents
-            ax.set_xticks(np.linspace(extent[0], extent[1], 5), crs=ccrs.PlateCarree())  # set longitude indicators
-            ax.set_yticks(np.linspace(extent[2], extent[3], 5)[1:], crs=ccrs.PlateCarree())  # set latitude indicators
-            lon_formatter = LongitudeFormatter(number_format="0.2f", dateline_direction_label=True)  # format lons
+            ax.set_xticks(
+                np.linspace(extent[0], extent[1], 5), crs=ccrs.PlateCarree()
+            )  # set longitude indicators
+            ax.set_yticks(
+                np.linspace(extent[2], extent[3], 5)[1:], crs=ccrs.PlateCarree()
+            )  # set latitude indicators
+            lon_formatter = LongitudeFormatter(
+                number_format="0.2f", dateline_direction_label=True
+            )  # format lons
             lat_formatter = LatitudeFormatter(number_format="0.2f")  # format lats
             ax.xaxis.set_major_formatter(lon_formatter)  # set lons
             ax.yaxis.set_major_formatter(lat_formatter)  # set lats

@@ -6,7 +6,7 @@ from hics import HCS
 from scipy.spatial.transform import Rotation
 
 from xant import ureg
-from xant.common import Cardioid, Dipole, TE10Aperture
+from xant.antenna.common import Cardioid, Dipole, TE10Aperture
 
 
 class TestOperators(unittest.TestCase):

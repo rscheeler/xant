@@ -7,9 +7,9 @@ from loguru import logger
 from pint import Quantity
 from scipy.spatial.transform import Rotation
 
-from . import conversions
-from .conversions import uvw2phitheta
-from .utils import apply_rotation
+from ..utils import conversions
+from ..utils.conversions import uvw2phitheta
+from ..utils.geometry import apply_rotation
 
 SUPPORTED_POLS = [
     ["apolar"],

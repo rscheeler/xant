@@ -7,7 +7,7 @@ from hics import HCS
 from scipy.spatial.transform import Rotation
 
 from xant import ureg
-from xant.common import TE10Aperture
+from xant.antenna.common import TE10Aperture
 from xant.plotting import plot_antenna_pattern
 
 
