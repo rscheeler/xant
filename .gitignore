@@ -148,3 +148,6 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Intermediate resource files
+*itm_*.nc
