@@ -19,10 +19,10 @@ from loguru import logger
 from scipy.ndimage import map_coordinates, spline_filter
 from scipy.spatial.transform import Rotation
 
-from .. import ureg
 from ..utils import conversions
 from ..utils.calc import fast_nearest_indices
 from ..utils.geometry import apply_rotation
+from ..utils.units import ureg
 from . import polarization
 
 warnings.filterwarnings("ignore")
@@ -44,7 +44,7 @@ class Antenna:
 
     def __init__(
         self,
-        data: Union[str, Path, xr.DataArray, AntennaFunction],
+        data: str | Path | xr.DataArray | AntennaFunction,
         hcs: HCS | None = None,
     ) -> None:
         # Make sure if str is passed implying file import that it is converted to Path object
@@ -71,7 +71,7 @@ class Antenna:
         # Verify required attributes
         if not set(Antenna.REQUIRED_ATTRS).issubset(list(data.attrs.keys())):
             raise AttributeError(
-                f"Required attributes not found in data. Be sure {', '.join(Antenna.REQUIRED_ATTRS)} is an attribute."
+                f"Required attributes not found in data. Be sure {', '.join(Antenna.REQUIRED_ATTRS)} is an attribute.",
             )
 
     # Properties
@@ -130,7 +130,8 @@ class Antenna:
             if (
                 not np.array_equal(np.array(self.data.coords["polarization"]), np.array(["apolar"]))
                 and not np.array_equal(
-                    np.array(other.data.coords["polarization"]), np.array(["apolar"])
+                    np.array(other.data.coords["polarization"]),
+                    np.array(["apolar"]),
                 )
                 and operator in [opr.mul, opr.truediv]
             ):
@@ -192,12 +193,14 @@ class Antenna:
                 [
                     spline_filter(raw_vals[i, ...], mode=mode, order=order, **kwargs)
                     for i in range(raw_vals.shape[0])
-                ]
+                ],
             )
 
             # 2. Wrap it back into a DataArray with the same dims as self.data
             self.__spline_filter = xr.DataArray(
-                coeffs_raw, dims=srcdata.dims, coords=srcdata.coords
+                coeffs_raw,
+                dims=srcdata.dims,
+                coords=srcdata.coords,
             )
         return self.__spline_filter
 
@@ -323,7 +326,7 @@ class Antenna:
             if not isinstance(v, xr.DataArray):
                 if not isinstance(v, pint.Quantity):
                     raise ValueError("Input must be specified as a pint.Quantity")
-                elif np.array(v).shape == ():
+                if np.array(v).shape == ():
                     # Needs to have a dimension
                     v = np.array([v.magnitude]) * v.units
                 # Make xr.DataArray and assign to kwarg dict
@@ -382,7 +385,9 @@ class Antenna:
                 # Get intersecting values and convert to xarray DataArray
                 intersecting_values = np.intersect1d(rv, kv)
                 intersecting_values = xr.DataArray(
-                    intersecting_values, coords={k: intersecting_values}, dims=(k,)
+                    intersecting_values,
+                    coords={k: intersecting_values},
+                    dims=(k,),
                 )
 
                 # Change kwarg
@@ -477,7 +482,7 @@ class Antenna:
                 {
                     **{k: gridcoords[list(kwargs.keys()).index(k)] for k in base_dims},
                     **{k: v for k, v in zip(base_spatial_dims, baseangles)},
-                }
+                },
             )
 
             # Make sure values are in base units
@@ -580,8 +585,8 @@ class Antenna:
                         .sortby(slcsearch.squeeze())[:2]
                         .coords[dim]
                         .diff(dim)
-                        .item()
-                    )
+                        .item(),
+                    ),
                 )
                 * ureg.degree
             )
@@ -771,7 +776,7 @@ class ConcatFunction(AntennaFunction):
         # Store inputs
 
         self.coord = coord
-        self.dim = tuple([k for k in coord.keys()])
+        self.dim = tuple([k for k in coord])
         self.antennas = xr.DataArray(antennas, dims=self.dim, coords=coord)
 
         # Get dims and coords from self
@@ -787,7 +792,7 @@ class ConcatFunction(AntennaFunction):
         Function for returning antenna data
         """
         # Remove concatenated dim from kwargs if present
-        if self.dim[0] in kwargs.keys():
+        if self.dim[0] in kwargs:
             concat_coord = kwargs.pop(self.dim[0])
         else:
             concat_coord = self.coord[self.dim[0]]

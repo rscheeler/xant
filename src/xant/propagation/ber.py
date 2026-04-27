@@ -1,28 +1,32 @@
-from typing import Union, Optional
+from typing import Optional, Union
 
 import numpy as np
 import xarray as xr
 from pint import Quantity
 from scipy.special import erfc, erfcinv
 
-from .. import ureg
+from ..utils.units import ureg
 
-__all__ = ("mqam_ber", "mpsk_ber", "mqam_ebno", "mpsk_ebno")
+__all__ = ("mpsk_ber", "mpsk_ebno", "mqam_ber", "mqam_ebno")
 
 DEFAULT_EBNO = xr.DataArray(
-    np.linspace(0, 15, 101) * ureg.dB, dims=("ebno",), coords=dict(ebno=np.linspace(0, 15, 101))
+    np.linspace(0, 15, 101) * ureg.dB,
+    dims=("ebno",),
+    coords=dict(ebno=np.linspace(0, 15, 101)),
 )
 DEFAULT_ORDER = xr.DataArray(
-    [2, 3, 4, 6], dims=("modulation_order",), coords=dict(modulation_order=[2, 3, 4, 6])
+    [2, 3, 4, 6],
+    dims=("modulation_order",),
+    coords=dict(modulation_order=[2, 3, 4, 6]),
 )
 
 
-def Q(x: Union[xr.DataArray, Quantity, float]) -> Union[xr.DataArray, Quantity, float]:
+def Q(x: xr.DataArray | Quantity | float) -> xr.DataArray | Quantity | float:
     """
     Q-Function which is the "tail distribution function of the standard normal distribution" [1] Expressed in terms of
     the error function.
 
-    References
+    References:
     ----------
     [1] https://en.wikipedia.org/wiki/Q-function
     """
@@ -35,11 +39,11 @@ def Q(x: Union[xr.DataArray, Quantity, float]) -> Union[xr.DataArray, Quantity, 
     return q
 
 
-def Qinv(q: Union[xr.DataArray, float]) -> Union[xr.DataArray, float]:
+def Qinv(q: xr.DataArray | float) -> xr.DataArray | float:
     """
     Inverse of the Q-function.
 
-    References
+    References:
     ----------
     [1] https://en.wikipedia.org/wiki/Q-function#Inverse_Q
     """
@@ -53,8 +57,8 @@ def Qinv(q: Union[xr.DataArray, float]) -> Union[xr.DataArray, float]:
 
 
 def mqam_ber(
-    p: Optional[Union[int, xr.DataArray]] = DEFAULT_ORDER,
-    ebno: Optional[Union[Quantity, xr.DataArray]] = DEFAULT_EBNO,
+    p: int | xr.DataArray | None = DEFAULT_ORDER,
+    ebno: Quantity | xr.DataArray | None = DEFAULT_EBNO,
 ):
     """
     Calculates the M-ary bit error rate (BER) for a quadrature amplitude modulation scheme (QAM) signal over
@@ -67,7 +71,7 @@ def mqam_ber(
     ebno : Quantity, DataArray
         Energy per bit to noise power spectral density ratio
 
-    References
+    References:
     ----------
     Jianhua Lu, K. B. Letaief, J. C. . -I. Chuang and M. L. Liou, "M-PSK and M-QAM BER computation using signal-space
     concepts," in IEEE Transactions on Communications, vol. 47, no. 2, pp. 181-184, Feb. 1999, doi: 10.1109/26.752121.
@@ -105,8 +109,8 @@ def mqam_ber(
 
 
 def mpsk_ber(
-    p: Optional[Union[int, xr.DataArray]] = DEFAULT_ORDER,
-    ebno: Optional[Union[Quantity, xr.DataArray]] = DEFAULT_EBNO,
+    p: int | xr.DataArray | None = DEFAULT_ORDER,
+    ebno: Quantity | xr.DataArray | None = DEFAULT_EBNO,
 ):
     """
     Calculates the M-ary bit error rate (BER) for a phase-shift keying scheme (PSK) signal over
@@ -119,7 +123,7 @@ def mpsk_ber(
     ebno : Quantity, DataArray
         Energy per bit to noise power spectral density ratio
 
-    References
+    References:
     ----------
     Jianhua Lu, K. B. Letaief, J. C. . -I. Chuang and M. L. Liou, "M-PSK and M-QAM BER computation using signal-space
     concepts," in IEEE Transactions on Communications, vol. 47, no. 2, pp. 181-184, Feb. 1999, doi: 10.1109/26.752121.
@@ -155,7 +159,7 @@ def mpsk_ebno(p: int, ber: float):
     ber : float
         Desired bit error rate
 
-    References
+    References:
     ----------
     Jianhua Lu, K. B. Letaief, J. C. . -I. Chuang and M. L. Liou, "M-PSK and M-QAM BER computation using signal-space
     concepts," in IEEE Transactions on Communications, vol. 47, no. 2, pp. 181-184, Feb. 1999, doi: 10.1109/26.752121.
@@ -182,12 +186,11 @@ def mqam_ebno(p, ber):
     ber : float
         Desired bit error rate
 
-    References
+    References:
     ----------
     Jianhua Lu, K. B. Letaief, J. C. . -I. Chuang and M. L. Liou, "M-PSK and M-QAM BER computation using signal-space
     concepts," in IEEE Transactions on Communications, vol. 47, no. 2, pp. 181-184, Feb. 1999, doi: 10.1109/26.752121.
     """
-
     # Coarse
     ebno_coarse = np.linspace(0, 50, 50001) * ureg.dB
     ebno_coarse = xr.DataArray(ebno_coarse, dims=("ebno",), coords=dict(ebno=ebno_coarse))

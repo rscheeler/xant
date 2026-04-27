@@ -7,7 +7,7 @@ from pint import Quantity
 from scipy.spatial.transform import Rotation
 from scipy.special import jv
 
-from .. import ureg
+from ..utils.units import ureg
 from .core import Antenna, AntennaFunction
 from .phasedarray import AntennaArray
 

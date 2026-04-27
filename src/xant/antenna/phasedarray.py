@@ -17,9 +17,9 @@ from matplotlib.patches import RegularPolygon
 from pint import Quantity
 from scipy.spatial.transform import Rotation
 
-from .. import ureg
 from ..utils import conversions
 from ..utils.geometry import apply_rotation
+from ..utils.units import ureg
 from .core import Antenna, AntennaFunction, concat
 
 

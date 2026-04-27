@@ -8,7 +8,7 @@ from hics.geo.dem import llh2geocent
 from hics.utils import vector_norm
 from pint import Quantity
 
-from .. import ureg
+from ..utils.units import ureg
 
 COORDINATE_DIMS = dict(
     phitheta=("phi", "theta"),
@@ -29,7 +29,8 @@ eps = 12
 
 
 def phitheta2uvw(
-    phi: np.ndarray | xr.DataArray, theta: np.ndarray | xr.DataArray
+    phi: np.ndarray | xr.DataArray,
+    theta: np.ndarray | xr.DataArray,
 ) -> tuple[np.ndarray | xr.DataArray, np.ndarray | xr.DataArray, np.ndarray | xr.DataArray]:
     """
     Converts spherical phi and theta positions to cartesian u, v, w.
@@ -62,7 +63,9 @@ def phitheta2uvw(
 
 
 def uvw2phitheta(
-    u: np.ndarray | xr.DataArray, v: np.ndarray | xr.DataArray, w: np.ndarray | xr.DataArray
+    u: np.ndarray | xr.DataArray,
+    v: np.ndarray | xr.DataArray,
+    w: np.ndarray | xr.DataArray,
 ) -> tuple[np.ndarray | xr.DataArray, np.ndarray | xr.DataArray]:
     """
     Converts cartesian coordinates u, v, w to polar spherical coordinates phi, theta.
@@ -99,7 +102,9 @@ def uvw2phitheta(
 
 
 def uvw2uvw(
-    u: np.ndarray | xr.DataArray, v: np.ndarray | xr.DataArray, w: np.ndarray | xr.DataArray
+    u: np.ndarray | xr.DataArray,
+    v: np.ndarray | xr.DataArray,
+    w: np.ndarray | xr.DataArray,
 ) -> tuple[np.ndarray | xr.DataArray, np.ndarray | xr.DataArray, np.ndarray | xr.DataArray]:
     """
     Convenience function that just returns the inputs.
@@ -123,7 +128,9 @@ def llh2uvw(lat=None, lon=None, h=None, hagl=True, reference_cs=None):
         position = xr.concat(position, dim="position")
     else:
         position = xr.DataArray(
-            [x, y, z], dims=("position",), coords=dict(position=["x", "y", "z"])
+            [x, y, z],
+            dims=("position",),
+            coords=dict(position=["x", "y", "z"]),
         )
 
     # Get position relative to reference_cs
@@ -191,7 +198,9 @@ def ecef2uvw(x=None, y=None, z=None, reference_cs=None):
         position = xr.concat(position, dim="position")
     else:
         position = xr.DataArray(
-            [x, y, z], dims=("position",), coords=dict(position=["x", "y", "z"])
+            [x, y, z],
+            dims=("position",),
+            coords=dict(position=["x", "y", "z"]),
         )
 
     # Get position relative to reference_cs
@@ -228,7 +237,9 @@ def cartesian2uvw(x=None, y=None, z=None):
         position = xr.concat(position, dim="position")
     else:
         position = xr.DataArray(
-            [x, y, z], dims=("position",), coords=dict(position=["x", "y", "z"])
+            [x, y, z],
+            dims=("position",),
+            coords=dict(position=["x", "y", "z"]),
         )
 
     # Grab units if a Quantity
@@ -254,7 +265,8 @@ def cartesian2uvw(x=None, y=None, z=None):
 
 
 def azel2uvw(
-    azimuth: np.ndarray | xr.DataArray, elevation: np.ndarray | xr.DataArray
+    azimuth: np.ndarray | xr.DataArray,
+    elevation: np.ndarray | xr.DataArray,
 ) -> tuple[np.ndarray | xr.DataArray, np.ndarray | xr.DataArray, np.ndarray | xr.DataArray]:
     """
     Converts spherical azimuth and elevation positions in an azimuth over elevation coordinate frame to
@@ -276,7 +288,8 @@ def azel2uvw(
 
 
 def uv2uvw(
-    u: np.ndarray | xr.DataArray, v: np.ndarray | xr.DataArray
+    u: np.ndarray | xr.DataArray,
+    v: np.ndarray | xr.DataArray,
 ) -> tuple[np.ndarray | xr.DataArray, np.ndarray | xr.DataArray, np.ndarray | xr.DataArray]:
     """
     uv-projection where u and v define theta/phi. Unit circle for upper hemisphere.
@@ -288,7 +301,8 @@ def uv2uvw(
 
 
 def arcsin2uvw(
-    au: np.ndarray | xr.DataArray, av: np.ndarray | xr.DataArray
+    au: np.ndarray | xr.DataArray,
+    av: np.ndarray | xr.DataArray,
 ) -> tuple[np.ndarray | xr.DataArray, np.ndarray | xr.DataArray, np.ndarray | xr.DataArray]:
     """
     Arcsin projection. Unit square for upper hemisphere.
@@ -301,7 +315,8 @@ def arcsin2uvw(
 
 
 def trueview2uvw(
-    tvx: np.ndarray | xr.DataArray, tvy: np.ndarray | xr.DataArray
+    tvx: np.ndarray | xr.DataArray,
+    tvy: np.ndarray | xr.DataArray,
 ) -> tuple[np.ndarray | xr.DataArray, np.ndarray | xr.DataArray, np.ndarray | xr.DataArray]:
     """
     True-view projection. Unit square for upper hemisphere.
@@ -316,7 +331,9 @@ def trueview2uvw(
 
 
 def uvw2azel(
-    u: np.ndarray | xr.DataArray, v: np.ndarray | xr.DataArray, w: np.ndarray | xr.DataArray
+    u: np.ndarray | xr.DataArray,
+    v: np.ndarray | xr.DataArray,
+    w: np.ndarray | xr.DataArray,
 ) -> tuple[np.ndarray | xr.DataArray, np.ndarray | xr.DataArray]:
     """
     Converts cartesian u, v, w to spherical azimuth and elevation positions in an azimuth over elevation coordinate
@@ -345,7 +362,8 @@ def uvw2azel(
 
 
 def elaz2uvw(
-    elevation: np.ndarray | xr.DataArray, azimuth: np.ndarray | xr.DataArray
+    elevation: np.ndarray | xr.DataArray,
+    azimuth: np.ndarray | xr.DataArray,
 ) -> tuple[np.ndarray | xr.DataArray, np.ndarray | xr.DataArray, np.ndarray | xr.DataArray]:
     """
     Converts spherical elevation and azimuth positions in an elevation over azimuth coordinate frame to
@@ -367,7 +385,9 @@ def elaz2uvw(
 
 
 def uvw2elaz(
-    u: np.ndarray | xr.DataArray, v: np.ndarray | xr.DataArray, w: np.ndarray | xr.DataArray
+    u: np.ndarray | xr.DataArray,
+    v: np.ndarray | xr.DataArray,
+    w: np.ndarray | xr.DataArray,
 ) -> tuple[np.ndarray | xr.DataArray, np.ndarray | xr.DataArray]:
     """
     Converts cartesian u, v, w to spherical elevation and azimuth positions in an
@@ -396,7 +416,10 @@ def uvw2elaz(
 
 
 def h3grid2index(
-    i: xr.DataArray, j: xr.DataArray, origin_latlong: tuple, resolution: int
+    i: xr.DataArray,
+    j: xr.DataArray,
+    origin_latlong: tuple,
+    resolution: int,
 ) -> xr.DataArray:
     """
     Convert h3 grid specified by array in i and j and origin lat,lon to h3 cells.
@@ -419,7 +442,10 @@ def h3grid2index(
 
 
 def h3grid2ll(
-    i: xr.DataArray, j: xr.DataArray, origin_latlong: tuple, resolution: int
+    i: xr.DataArray,
+    j: xr.DataArray,
+    origin_latlong: tuple,
+    resolution: int,
 ) -> tuple[xr.DataArray, xr.DataArray]:
     """
     Convert h3 grid to latitude and longitude.

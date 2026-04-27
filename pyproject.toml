@@ -3,7 +3,7 @@
 name = "xant"
 version = "0.1.0"
 description = "Spatial antenna analysis with xarray."
-authors = [{ name = "Rob Scheeler", email = "email@example.com" }]
+authors = [{ name = "Rob Scheeler"}]
 readme = "README.md"
 license = {file = "LICENSE"}
 keywords = ["python"]

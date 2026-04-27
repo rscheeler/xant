@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from itertools import islice
 from typing import Union
 
@@ -7,7 +7,7 @@ import numpy as np
 from pint import Quantity
 from xarray import DataArray
 
-from .. import ureg
+from ..utils.units import ureg
 from . import ber
 
 
@@ -22,7 +22,7 @@ def nf2temp(nf: Quantity | DataArray, t0: Quantity) -> Quantity | DataArray:
     t0 : Quantity, DataArray
         Reference temperature
 
-    Returns
+    Returns:
     -------
     te : Quantity, DataArray
         Equivalent input noise temperature.
@@ -35,21 +35,21 @@ class LinkBudget:
     """Calculate link budget based off input parameters. Will attempt to solve for parameters not given."""
 
     name: str
-    pt: Union[Quantity, DataArray]
-    gt: Union[Quantity, DataArray]
-    gr: Union[Quantity, DataArray]
-    nf: Union[Quantity, DataArray]
-    distance: Union[Quantity, DataArray]
-    frequency: Union[Quantity, DataArray]
-    bandwidth: Union[Quantity, DataArray]
-    data_rate: Union[Quantity, DataArray]
+    pt: Quantity | DataArray
+    gt: Quantity | DataArray
+    gr: Quantity | DataArray
+    nf: Quantity | DataArray
+    distance: Quantity | DataArray
+    frequency: Quantity | DataArray
+    bandwidth: Quantity | DataArray
+    data_rate: Quantity | DataArray
     ber_req: float
     modulation: str
     modulation_order: int
-    t0: Union[Quantity, DataArray] = 290 * ureg.kelvin
-    ta: Union[Quantity, DataArray] = 290 * ureg.kelvin
-    additional_loss: Union[Quantity, DataArray] = 0 * ureg.dB
-    coding_gain: Union[Quantity, DataArray] = 0 * ureg.dB
+    t0: Quantity | DataArray = 290 * ureg.kelvin
+    ta: Quantity | DataArray = 290 * ureg.kelvin
+    additional_loss: Quantity | DataArray = 0 * ureg.dB
+    coding_gain: Quantity | DataArray = 0 * ureg.dB
 
     def __repr__(self):
         table = f"| Parameter | {self.name} |\r\n"
@@ -66,7 +66,7 @@ class LinkBudget:
     def view_link_table(self, link="tabular_margin", markdown=False):
         if markdown:
             table = f"| Parameter |{self.name} {link} | Unit |\r\n"
-            table += f"|-:|:-:|:-|\r\n"
+            table += "|-:|:-:|:-|\r\n"
             link_dictionary = getattr(self, link)
 
             for k, v in islice(link_dictionary.items(), 0, len(link_dictionary) - 1):
@@ -105,8 +105,7 @@ class LinkBudget:
         """
         if self.distance is None:
             raise NotImplementedError
-        else:
-            pl = (self.distance * 4 * np.pi / self.wavelength).to_base_units() ** 2
+        pl = (self.distance * 4 * np.pi / self.wavelength).to_base_units() ** 2
         return pl.to("dB")
 
     @property
@@ -119,7 +118,7 @@ class LinkBudget:
 
     @property
     def tsys(self):
-        """
+        r"""
         Returns the system temperature. Note it is assumed that the antenna radiometric temperature is equal to the
         reference temperature t0, resulting in the following.
         .. math::
@@ -163,7 +162,6 @@ class LinkBudget:
         """
         Returns the carrier-to-noise ratio
         """
-
         return (
             self.eirp
             * self.g_over_t
@@ -222,7 +220,7 @@ class LinkBudget:
         Returns the maximum link distance
         """
         return (np.sqrt(self.max_path_loss.to_base_units()) * self.wavelength / (4 * np.pi)).to(
-            "km"
+            "km",
         )
 
     @property
@@ -261,7 +259,7 @@ class LinkBudget:
             required_ebno=self.ebno_req,
         )
         return OrderedDict(
-            {**numer, **denom, **dict(margin=dictionary_ratio(numer, denom).to("dB"))}
+            {**numer, **denom, **dict(margin=dictionary_ratio(numer, denom).to("dB"))},
         )
 
     def set_distance_from_margin(self, link_margin: Quantity):
@@ -280,11 +278,10 @@ def dictionary_ratio(numerator: dict, denominator: dict):
     numerator : dict
     denominator : dict
 
-    Returns
+    Returns:
     -------
     ratio
     """
-
     numer = None
     for v in numerator.values():
         v = v.to_base_units()
