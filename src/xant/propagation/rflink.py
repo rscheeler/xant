@@ -20,11 +20,11 @@ from pint import Quantity
 from scipy.spatial.transform import Rotation
 from shapely.geometry import LineString
 
-from .. import ureg
 from ..antenna.core import Antenna
 from ..antenna.polarization import thetaphi2xyz
 from ..utils.calc import round2base
 from ..utils.conversions import cartesian2uvw, uvw2phitheta
+from ..utils.units import ureg
 from . import propagators
 
 plt.rcParams["animation.html"] = "jshtml"
@@ -336,6 +336,8 @@ def calculate_spatial_link(
 
     # Squeeze singleton dimensions
     rx_power = rx_power.squeeze()
+
+    prop_loss.attrs = {**prop_loss.attrs, **kwargs}
 
     return rx_power, prop_loss, incident_pol, txcs, rxcs
 
@@ -949,7 +951,24 @@ def view_link_horizon(
     if ax is None:
         fig, ax = plt.subplots()
         fig.set_figwidth(fig.get_figwidth() * 2)
-    ax = view_surface_profile(tx.hcs, rx.hcs, aspect=aspect, ax=ax, **cs_kwargs)
+    if "clutter_method" in prop_loss.attrs.keys():
+        if "clutter_kwargs" in prop_loss.attrs.keys():
+            lc_skip_ind = prop_loss.attrs["clutter_kwargs"].get("lc_skip_ind", None)
+            lc = True
+            lcidx = 0
+    else:
+        lc_skip_ind = None
+        lc = False
+        lcidx = -1
+    ax = view_surface_profile(
+        tx.hcs,
+        rx.hcs,
+        aspect=aspect,
+        ax=ax,
+        lc=lc,
+        lc_skip_ind=lc_skip_ind,
+        **cs_kwargs,
+    )
 
     # Slice
     res = res.isel(**{k: v for k, v in data_kwargs.items() if k in res.dims})
@@ -965,16 +984,16 @@ def view_link_horizon(
     xs = np.linspace(*ax.get_xlim(), 1001)
 
     # Y data for tx is x*tan(tx_angle) + h_tx
-    yta = ax.get_lines()[2].get_ydata().item()
-    xta = ax.get_lines()[2].get_xdata().item()
+    yta = ax.get_lines()[lcidx + 2].get_ydata().item()
+    xta = ax.get_lines()[lcidx + 2].get_xdata().item()
     ytx = xs * np.tan(res.tx_angle.item()) + yta
     # Plot tx horizon line
     lw = 0.8
     ax.plot(xs, ytx, ls="dashdot", lw=lw, color="k", label="TX Horizon")
 
     # Y data for rx is -x * tan(tx_angle) + (h_rx + dist * tan(rx_angle))
-    yra = ax.get_lines()[3].get_ydata().item()
-    xra = ax.get_lines()[3].get_xdata().item()
+    yra = ax.get_lines()[lcidx + 3].get_ydata().item()
+    xra = ax.get_lines()[lcidx + 3].get_xdata().item()
     yrx = -xs * np.tan(res.rx_angle.item()) + yra + xra * np.tan(res.rx_angle.item())
     # Plot rx horizon line
     ax.plot(xs, yrx, ls="dashdot", lw=lw, color="k", label="RX Horizon")
@@ -989,7 +1008,13 @@ def view_link_horizon(
     wavelength = (ureg.speed_of_light / (res.frequency.item() * ureg.Hz)).to("m").magnitude
     los_line = LineString([(x, y) for x, y in zip(sl_x, sl)])
     surface_line = LineString(
-        [(x, y) for x, y in zip(ax.get_lines()[1].get_xdata(), ax.get_lines()[1].get_ydata())],
+        [
+            (x, y)
+            for x, y in zip(
+                ax.get_lines()[lcidx + 1].get_xdata(),
+                ax.get_lines()[lcidx + 1].get_ydata(),
+            )
+        ],
     )
     los_c = "k"
     if los_line.intersects(surface_line):
@@ -1064,8 +1089,8 @@ def view_link_horizon(
     yscale = 1
 
     # Make TX pattern
-    gtx = rtx * np.sin(rtx.theta) + ax.get_lines()[2].get_xdata()
-    gty = rtx * np.cos(rtx.theta) * yscale + ax.get_lines()[2].get_ydata()
+    gtx = rtx * np.sin(rtx.theta) + ax.get_lines()[lcidx + 2].get_xdata()
+    gty = rtx * np.cos(rtx.theta) * yscale + ax.get_lines()[lcidx + 2].get_ydata()
     ax.plot(gtx, gty, color="C0", lw=0.8, label="TX Gain")
     ax.fill(
         gtx,
@@ -1077,8 +1102,8 @@ def view_link_horizon(
     )
 
     # Make Pattern Note that Rx points in negative x
-    gtrx = rtrx * np.sin(-rtrx.theta) + ax.get_lines()[3].get_xdata()
-    gtry = rtrx * np.cos(-rtrx.theta) * yscale + ax.get_lines()[3].get_ydata()
+    gtrx = rtrx * np.sin(-rtrx.theta) + ax.get_lines()[lcidx + 3].get_xdata()
+    gtry = rtrx * np.cos(-rtrx.theta) * yscale + ax.get_lines()[lcidx + 3].get_ydata()
     ax.plot(
         gtrx,
         gtry,
@@ -1096,8 +1121,8 @@ def view_link_horizon(
         linewidth=0.8,
     )
 
-    grx = -rrx * np.sin(rrx.theta) + ax.get_lines()[3].get_xdata()
-    gry = rrx * np.cos(rrx.theta) * yscale + ax.get_lines()[3].get_ydata()
+    grx = -rrx * np.sin(rrx.theta) + ax.get_lines()[lcidx + 3].get_xdata()
+    gry = rrx * np.cos(rrx.theta) * yscale + ax.get_lines()[lcidx + 3].get_ydata()
     ax.plot(grx, gry, color="C0", lw=0.8, label="RX Co-Pol Gain")
     ax.fill(
         grx,
@@ -1126,13 +1151,13 @@ def view_link_horizon(
     # place a text box in upper left in axes coords
     yspan = np.diff(ax.get_ylim()).squeeze()
     mid = np.mean(ax.get_ylim()).squeeze()
-    if ax.get_lines()[2].get_ydata() >= mid:
+    if ax.get_lines()[lcidx + 2].get_ydata() >= mid:
         ypos = gty.min() - yspan * 0.1
     else:
         ypos = gty.max() + yspan * 0.1
 
     ax.text(
-        ax.get_lines()[2].get_xdata().item(),
+        ax.get_lines()[lcidx + 2].get_xdata().item(),
         ypos,
         f"TX Power: {res.tx_power.item().to('dBm').magnitude:.2f} dBm\nTX Gain: {tx_gain.item().magnitude:.2f} dB",
         transform=ax.transData,
@@ -1140,12 +1165,12 @@ def view_link_horizon(
         verticalalignment="center",
         bbox=bbox_props,
     )
-    if ax.get_lines()[3].get_ydata() >= mid:
+    if ax.get_lines()[lcidx + 3].get_ydata() >= mid:
         ypos = gtry.min() - yspan * 0.1
     else:
         ypos = gtry.max() + yspan * 0.1
     ax.text(
-        ax.get_lines()[3].get_xdata().item(),
+        ax.get_lines()[lcidx + 3].get_xdata().item(),
         ypos,
         f"RX Gain: {rx_gain.item().magnitude:.2f} dB\nRX Power: {res.item().to('dBm').magnitude:.2f} dBm",
         transform=ax.transData,

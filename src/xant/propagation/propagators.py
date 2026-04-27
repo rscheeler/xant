@@ -1,3 +1,4 @@
+from enum import Enum, auto
 from typing import Union
 
 import numpy as np
@@ -9,7 +10,7 @@ from hics.geo.transforms import geo_mid
 from loguru import logger
 from pint import Quantity
 
-from .. import ureg
+from ..utils.units import ureg
 from .itm import itm_p2p as _itmrflink_p2p
 from .itm.utils import _GND_EPS, _GND_SGM, CLIMATE_ZONES, ITM_POLARIZATION, REFRACTIVITY
 
@@ -129,13 +130,20 @@ def mask_los(prop_loss: xr.DataArray, txcs: HCS, rxcs: HCS):
     return prop_loss
 
 
+class ClutterMethods(Enum):
+    NONE = auto()
+    ITURP1812 = auto()
+    ITURP2108 = auto()
+
+
 def itm_rflink(
     txcs: HCS = None,
     rxcs: HCS = None,
     frequency: Quantity | xr.DataArray = None,
     gnd: str = "good",
     additional_loss: Quantity | xr.DataArray = None,
-    clutter: bool = True,
+    clutter_method: ClutterMethods = ClutterMethods.NONE,
+    clutter_kwargs: dict = None,
     **kwargs,
 ):
     """
@@ -166,15 +174,16 @@ def itm_rflink(
         kwargs["situation"] = kwargs.pop("confidence")
 
     # Determine surface profile
-    surface_profile = get_surface_profile(txcs, rxcs)
 
     # Select clutter or surface
-    # if clutter:
-    #     surface_profile = surface_profile.lc_profile
+    if clutter_method == ClutterMethods.ITURP1812:
+        surface_profile = get_surface_profile(txcs, rxcs, **clutter_kwargs)
+        surface_profile = surface_profile.lc_profile
 
-    # else:
-    #     surface_profile = surface_profile.surface_profile
-    surface_profile = surface_profile.surface_profile
+    else:
+        surface_profile = get_surface_profile(txcs, rxcs)
+        surface_profile = surface_profile.surface_profile
+
     if isinstance(frequency, xr.DataArray):
         # Broadcast surface profile
         surface_profile, tmp_freq = xr.broadcast(surface_profile, frequency)
