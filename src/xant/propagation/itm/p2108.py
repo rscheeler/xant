@@ -9,8 +9,7 @@ https://www.itu.int/rec/R-REC-P.2108
 
 import numpy as np
 from scipy.stats import Normal, norm
-
-from ... import ureg
+from xrench.units import ureg
 
 
 @ureg.wraps(ureg.dB, (ureg.GHz, ureg.km, None))

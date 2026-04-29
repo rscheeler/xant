@@ -13,18 +13,18 @@ from cartopy.mpl.ticker import LatitudeFormatter, LongitudeFormatter
 from hics import HCS
 from hics.geo.geoutils import relative_azimuth
 from hics.plotting import view_surface_profile
-from hics.utils import vector_norm
 from matplotlib import animation
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from pint import Quantity
 from scipy.spatial.transform import Rotation
 from shapely.geometry import LineString
+from xrench.units import ureg
+from xrench.xrutils import vector_norm
 
 from ..antenna.core import Antenna
 from ..antenna.polarization import thetaphi2xyz
 from ..utils.calc import round2base
 from ..utils.conversions import cartesian2uvw, uvw2phitheta
-from ..utils.units import ureg
 from . import propagators
 
 plt.rcParams["animation.html"] = "jshtml"

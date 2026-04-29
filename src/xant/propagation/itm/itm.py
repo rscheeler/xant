@@ -16,8 +16,8 @@ import warnings
 import numpy as np
 import xarray as xr
 from pint import Quantity
+from xrench.units import ureg
 
-from ... import ureg
 from .utils import take_magnitudes
 
 ## Constants
@@ -117,7 +117,7 @@ def itm_p2p(
     for t, l, s in zip(time_mg.ravel(), location_mg.ravel(), situation_mg.ravel()):
         A__db.append(
             variability(t, l, s, he, delta_h, frequency, pfl.distance_m, A_ref__db, climate, mdvar)
-            + A_fs__db
+            + A_fs__db,
         )
 
     # Capture necessary attributes
@@ -150,7 +150,18 @@ def itm_p2p(
 
 
 def validate(
-    htx, hrx, climate, time, location, situation, N0, frequency, pol, epsilon, sigma, mdvar
+    htx,
+    hrx,
+    climate,
+    time,
+    location,
+    situation,
+    N0,
+    frequency,
+    pol,
+    epsilon,
+    sigma,
+    mdvar,
 ):
     """
     Perform input parameter validation.
@@ -294,10 +305,12 @@ def pfl_extraction(pfl, gamma_e):
     # "In our own work we have sometimes said that consideration of terrain elevations should begin at a point about 15 times the tower height"
     #     - [Hufford, 1982] Page 25
     d_start = min(
-        15.0 * pfl.txagl, 0.1 * d_hzn[0]
+        15.0 * pfl.txagl,
+        0.1 * d_hzn[0],
     )  # take lesser: 10% of horizon distance or 15x terminal height
     d_end = dmeter - min(
-        15.0 * pfl.rxagl, 0.1 * d_hzn[1]
+        15.0 * pfl.rxagl,
+        0.1 * d_hzn[1],
     )  # << ditto, but measured from the far end of the link >>
 
     delta_h = terrain_variability(pfl, d_start, d_end)
@@ -313,7 +326,7 @@ def pfl_extraction(pfl, gamma_e):
         fit_tx, fit_rx = fit_lstsq(pfl, d_start, d_end)
         he += np.array([max(pfl[0].item() - fit_tx, 0.0), max(pfl[-1].item() - fit_rx, 0.0)])
         d_hzn = np.sqrt(2.0 * he * ae) * np.exp(
-            -0.07 * np.sqrt(delta_h / np.max((he, np.array([5.0] * 2)), axis=0))
+            -0.07 * np.sqrt(delta_h / np.max((he, np.array([5.0] * 2)), axis=0)),
         )
         combined_horizons = d_hzn.sum()
         if combined_horizons <= dmeter:
@@ -401,11 +414,11 @@ def longley_rice(
     # Checks that the actual horizon distance can't be greater than 3 times the smooth earth horizon distance
     if d_hzn__meter[0] > 3.0 * d_hzn_s__meter[0]:
         warnings.warn(
-            "TX horizon distance is greater than 3 times the smooth earth horizon distance"
+            "TX horizon distance is greater than 3 times the smooth earth horizon distance",
         )
     if d_hzn__meter[1] > 3.0 * d_hzn_s__meter[1]:
         warnings.warn(
-            "RX horizon distance is greater than 3 times the smooth earth horizon distance"
+            "RX horizon distance is greater than 3 times the smooth earth horizon distance",
         )
 
     # Check the surface refractivity
@@ -417,7 +430,7 @@ def longley_rice(
 
     if N_s < 250:
         warnings.warn(
-            "Internally computed surface refractivity value is small - care must be taken with result"
+            "Internally computed surface refractivity value is small - care must be taken with result",
         )
 
     # Check effective earth size
@@ -427,7 +440,7 @@ def longley_rice(
     # Check ground impedance
     if Z_g.real <= abs(Z_g.imag):
         raise ValueError(
-            "The imaginary portion of the complex impedance is larger than the real portion"
+            "The imaginary portion of the complex impedance is larger than the real portion",
         )
 
     # Select two distances far in the diffraction region
@@ -495,7 +508,14 @@ def longley_rice(
             d_1__meter = max(-A_d0__db / M_d, 0.25 * d_ML__meter)
 
         A_1__db = line_of_sight_loss(
-            d_1__meter, h_e__meter, Z_g, delta_h__meter, M_d, A_d0__db, d_sML__meter, f__mhz
+            d_1__meter,
+            h_e__meter,
+            Z_g,
+            delta_h__meter,
+            M_d,
+            A_d0__db,
+            d_sML__meter,
+            f__mhz,
         )
 
         flag = False
@@ -622,18 +642,15 @@ def longley_rice(
     delta__meter = d__meter - d_ML__meter
     if int(delta__meter) < 0:
         propmode = "line-of-sight"
-    else:
-        if d__meter <= d_sML__meter or d__meter <= d_x__meter:
-            propmode = (
-                "diffraction single horizon"
-                if int(delta__meter) == 0
-                else "diffraction double horizon"
-            )
+    elif d__meter <= d_sML__meter or d__meter <= d_x__meter:
+        propmode = (
+            "diffraction single horizon" if int(delta__meter) == 0 else "diffraction double horizon"
+        )
 
-        else:
-            "troposcatter single horizon" if int(
-                delta__meter
-            ) == 0 else "troposcatter double horizon"
+    else:
+        "troposcatter single horizon" if int(
+            delta__meter,
+        ) == 0 else "troposcatter double horizon"
 
     # Don't allow a negative loss
     A_ref__db = max(A_ref__db, 0.0)
@@ -658,7 +675,13 @@ def diffraction_loss(
     A_k__db = knife_edge_diffraction(d__meter, f__mhz, a_e__meter, theta_los, d_hzn__meter)
 
     A_se__db = smooth_earth_diffraction(
-        d__meter, f__mhz, a_e__meter, theta_los, d_hzn__meter, h_e__meter, Z_g
+        d__meter,
+        f__mhz,
+        a_e__meter,
+        theta_los,
+        d_hzn__meter,
+        h_e__meter,
+        Z_g,
     )
 
     # Terrain clutter
@@ -688,7 +711,8 @@ def diffraction_loss(
 
     d_ML__meter = d_hzn__meter.sum()  # Maximum line-of-sight distance for actual path
     q = (term1 + (-theta_los * a_e__meter + d_ML__meter) / d__meter) * min(
-        delta_h_d__meter * f__mhz / 47.7, 6283.2
+        delta_h_d__meter * f__mhz / 47.7,
+        6283.2,
     )
 
     # weighting factor [ERL 17-ITS 67, Eqn 3.23]
@@ -739,14 +763,20 @@ def fresnel_integral(v2):
             )  # [TN101v2, Eqn III.24b] and [ERL 79-ITS 67, Eqn 3.27a & 3.27b]
         else:
             res[i] = 12.953 + 10 * np.log10(
-                vi
+                vi,
             )  # [TN101v2, Eqn III.24c] and [ERL 79-ITS 67, Eqn 3.27a & 3.27b]
 
     return res
 
 
 def smooth_earth_diffraction(
-    d__meter, f__mhz, a_e__meter, theta_los, d_hzn__meter, h_e__meter, Z_g
+    d__meter,
+    f__mhz,
+    a_e__meter,
+    theta_los,
+    d_hzn__meter,
+    h_e__meter,
+    Z_g,
 ):
     """"""
     theta_nlos = d__meter / a_e__meter - theta_los  # [Algorithm, Eqn 4.12]
@@ -786,7 +816,7 @@ def smooth_earth_diffraction(
 
     # compute distance function
     G_x__db = 0.05751 * x__km[0] - 10.0 * np.log10(
-        x__km[0]
+        x__km[0],
     )  # [TN101, Eqn 8.4] & [Volger 1964, Eqn 13]
 
     return G_x__db - F_x__db.sum() - 20  # [Algorithm, Eqn 4.20] & [Volger 1964]
@@ -889,7 +919,15 @@ def free_space_pl(d__meter, f__mhz):
 
 
 def troposcatter_loss(
-    d__meter, theta_hzn, d_hzn__meter, h_e__meter, a_e__meter, N_s, f__mhz, theta_los, h0
+    d__meter,
+    theta_hzn,
+    d_hzn__meter,
+    h_e__meter,
+    a_e__meter,
+    N_s,
+    f__mhz,
+    theta_los,
+    h0,
 ):
     """
     Troposcatter loss
@@ -1139,7 +1177,7 @@ def variability(
 
     if abs(z_T) > 3.10 or abs(z_L) > 3.10 or abs(z_S) > 3.10:
         warnings.warn(
-            "One of the provided variabilities is located far in the tail of its distribution"
+            "One of the provided variabilities is located far in the tail of its distribution",
         )
 
     # -------------------------------------

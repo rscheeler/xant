@@ -6,8 +6,8 @@ from typing import Union
 import numpy as np
 from pint import Quantity
 from xarray import DataArray
+from xrench.units import ureg
 
-from ..utils.units import ureg
 from . import ber
 
 

@@ -3,8 +3,8 @@ import unittest
 import numpy as np
 import xarray as xr
 from hics import HCS
-from hics.utils import vector_norm
 from scipy.spatial.transform import Rotation
+from xrench.xrutils import vector_norm
 
 from xant import ureg
 from xant.antenna.common import DipoleAboveGround, TE10Aperture
@@ -53,7 +53,7 @@ class TestArrayTotalPowerPanel(unittest.TestCase):
         data_db = 20 * np.log10(abs(data.sel(polarization="apolar")))
         data_db = data_db.drop_vars("polarization")
         apol = 20 * np.log10(
-            abs(vector_norm(data.sel(polarization=["theta", "phi"]), "polarization"))
+            abs(vector_norm(data.sel(polarization=["theta", "phi"]), "polarization")),
         )
 
         xr.testing.assert_allclose(data_db, apol)
@@ -99,7 +99,7 @@ class TestArrayTotalPowerOmni(unittest.TestCase):
                         * ureg.inch,
                         rotation=Rotation.from_euler("ZYZ", [45, -90, -az], degrees=True),
                         reference=arr_hcs,
-                    )
+                    ),
                 )
 
         self.omni_p45 = AntennaArray(element, coordsyss)
@@ -115,7 +115,7 @@ class TestArrayTotalPowerOmni(unittest.TestCase):
         data_db = 20 * np.log10(abs(data.sel(polarization="apolar")))
         data_db = data_db.drop_vars("polarization")
         apol = 20 * np.log10(
-            abs(vector_norm(data.sel(polarization=["theta", "phi"]), "polarization"))
+            abs(vector_norm(data.sel(polarization=["theta", "phi"]), "polarization")),
         )
 
         xr.testing.assert_allclose(data_db, apol)

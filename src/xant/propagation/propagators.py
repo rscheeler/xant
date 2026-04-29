@@ -9,8 +9,8 @@ from hics.geo.geoutils import get_surface_profile
 from hics.geo.transforms import geo_mid
 from loguru import logger
 from pint import Quantity
+from xrench.units import ureg
 
-from ..utils.units import ureg
 from .itm import itm_p2p as _itmrflink_p2p
 from .itm.utils import _GND_EPS, _GND_SGM, CLIMATE_ZONES, ITM_POLARIZATION, REFRACTIVITY
 

@@ -18,11 +18,11 @@ from hics import GLOBAL_CS, HCS
 from loguru import logger
 from scipy.ndimage import map_coordinates, spline_filter
 from scipy.spatial.transform import Rotation
+from xrench.units import ureg
+from xrench.xrutils import apply_rotation
 
 from ..utils import conversions
 from ..utils.calc import fast_nearest_indices
-from ..utils.geometry import apply_rotation
-from ..utils.units import ureg
 from . import polarization
 
 warnings.filterwarnings("ignore")

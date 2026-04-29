@@ -4,8 +4,7 @@ import numpy as np
 import xarray as xr
 from pint import Quantity
 from scipy.special import erfc, erfcinv
-
-from ..utils.units import ureg
+from xrench.units import ureg
 
 __all__ = ("mpsk_ber", "mpsk_ebno", "mqam_ber", "mqam_ebno")
 

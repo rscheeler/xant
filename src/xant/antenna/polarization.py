@@ -2,14 +2,13 @@ from typing import Optional
 
 import numpy as np
 import xarray as xr
-from hics.utils import vector_norm
 from loguru import logger
 from pint import Quantity
 from scipy.spatial.transform import Rotation
+from xrench.xrutils import apply_rotation, vector_norm
 
 from ..utils import conversions
 from ..utils.conversions import uvw2phitheta
-from ..utils.geometry import apply_rotation
 
 SUPPORTED_POLS = [
     ["apolar"],
@@ -28,18 +27,18 @@ def thetaphi2xyz(phi=None, theta=None):
     x, y, z polarizations.
 
     .. math::
-        E_x &= E_{\\theta} \cos\\theta\cos\phi - E_{\phi} \sin\phi
+        E_x &= E_{\\theta} \\cos\\theta\\cos\\phi - E_{\\phi} \\sin\\phi
 
-        E_y &= E_{\\theta} \cos\\theta\sin\phi + E_{\phi} \cos\phi
+        E_y &= E_{\\theta} \\cos\\theta\\sin\\phi + E_{\\phi} \\cos\\phi
 
-        E_z &= -E_{\\theta} \sin\\theta
+        E_z &= -E_{\\theta} \\sin\\theta
     """
     A = np.array(
         [
             [np.cos(theta) * np.cos(phi), xr.ones_like(theta) * (-np.sin(phi))],
             [np.cos(theta) * np.sin(phi), xr.ones_like(theta) * np.cos(phi)],
             [-np.sin(theta) * xr.ones_like(phi), xr.zeros_like(theta) * xr.zeros_like(phi)],
-        ]
+        ],
     )
     tmp = xr.zeros_like(theta) * xr.zeros_like(phi)
     dims = ["new_polarization", "polarization"] + list(tmp.dims)
@@ -55,9 +54,9 @@ def thetaphi2l3xl3y(phi=None, theta=None):
     of co-pol aligned with the x-axis (l3x) and cross-pol aligned with the y-axis (l3y).
 
     .. math::
-        E_{l3x} &= E_{\\theta} \cos\phi - E_{\phi} \sin\phi
+        E_{l3x} &= E_{\\theta} \\cos\\phi - E_{\\phi} \\sin\\phi
 
-        E_{l3y} &= E_{\\theta} \sin\phi + E_{\phi} \cos\phi
+        E_{l3y} &= E_{\\theta} \\sin\\phi + E_{\\phi} \\cos\\phi
     """
     phi_mg = phi * xr.ones_like(theta)
     A = np.array([[np.cos(phi_mg), -np.sin(phi_mg)], [np.sin(phi_mg), np.cos(phi_mg)]])
@@ -77,9 +76,9 @@ def thetaphi2rhcplhcp(phi=None, theta=None):
     Returns Jones matrix to convert theta, phi polarization to circular RHCP and LHCP.
 
     .. math::
-        E_{RHCP} &= \\frac{E_{\\theta} + j E_{\phi}}{\sqrt{2}}
+        E_{RHCP} &= \\frac{E_{\\theta} + j E_{\\phi}}{\\sqrt{2}}
 
-        E_{LHCP} &= \\frac{E_{\\theta} - j E_{\phi}}{\sqrt{2}}
+        E_{LHCP} &= \\frac{E_{\\theta} - j E_{\\phi}}{\\sqrt{2}}
     """
     one_mg = xr.ones_like(phi) * xr.ones_like(theta)
     A = np.array([[one_mg, 1j * one_mg], [one_mg, -1j * one_mg]]) / np.sqrt(2)
@@ -98,9 +97,9 @@ def thetaphi2p45m45(phi=None, theta=None):
     Returns Jones matrix to convert theta, phi polarization to slant linear +/- 45.
 
     .. math::
-        E_{+45} &= \\frac{E_{\\theta} + E_{\phi}}{\sqrt{2}}
+        E_{+45} &= \\frac{E_{\\theta} + E_{\\phi}}{\\sqrt{2}}
 
-        E_{-45} &= \\frac{E_{\\theta} - E_{\phi}}{\sqrt{2}}
+        E_{-45} &= \\frac{E_{\\theta} - E_{\\phi}}{\\sqrt{2}}
     """
     one_mg = xr.ones_like(phi) * xr.ones_like(theta)
     A = np.array([[one_mg, one_mg], [one_mg, -1 * one_mg]]) / np.sqrt(2)
@@ -123,7 +122,7 @@ def project_all_polarizations(data, convert_kwargs: dict | None = None):
     """
     # Only project if not apolar or if all polarizations are present
     if data.polarization.shape != (1,) and set(data.polarization.values) != set(
-        [item for subl in SUPPORTED_POLS for item in subl]
+        [item for subl in SUPPORTED_POLS for item in subl],
     ):
         # Default convert kwargs
         if convert_kwargs is None:
@@ -140,7 +139,7 @@ def project_all_polarizations(data, convert_kwargs: dict | None = None):
         # Broadcast angles as this is necessary for some conversions
         angles = xr.broadcast(*angles)
         phi, theta = uvw2phitheta(
-            *getattr(conversions, f"{data.coordinate_frame}2uvw")(*angles, **convert_kwargs)
+            *getattr(conversions, f"{data.coordinate_frame}2uvw")(*angles, **convert_kwargs),
         )
 
         # All transforms start from thetaphi and go to the new basis
@@ -157,7 +156,8 @@ def project_all_polarizations(data, convert_kwargs: dict | None = None):
 
         # Map thetaphi to all the polarizations by first building up the transform matrix A
         A = xr.concat(
-            [f(phi=phi, theta=theta) for f in polarization_transforms], dim="new_polarization"
+            [f(phi=phi, theta=theta) for f in polarization_transforms],
+            dim="new_polarization",
         )
 
         # Get the apolar data, have to remove quantity and add back in
@@ -199,7 +199,7 @@ def rotate_polarization(data, uvw_request, rprod):
     if data.polarization.shape != (1,):
         # First check if theta phi are present and down-select
         if data.polarization.size > 3 and set(["theta", "phi"]).issubset(
-            set(data.polarization.values)
+            set(data.polarization.values),
         ):
             data = data.sel(polarization=["theta", "phi"])
 

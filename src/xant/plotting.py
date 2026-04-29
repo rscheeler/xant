@@ -2,17 +2,16 @@ from typing import Optional, Union
 
 import cartopy.crs as ccrs
 import cartopy.io.img_tiles as cimgt
-import matplotlib.animation as animation
+import leafmap.foliumap as leafmap
 import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
-from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
-import leafmap.foliumap as leafmap
+from cartopy.mpl.ticker import LatitudeFormatter, LongitudeFormatter
+from matplotlib import animation
+from xrench.units import ureg
 
-from . import ureg
 from .utils.calc import round2base
 from .utils.h3utils import h3xr2gpd
-
 
 plt.rcParams["animation.html"] = "jshtml"
 
@@ -22,15 +21,15 @@ _DEG_DIMS = ["theta", "phi", "azimuth", "elevation", "lat", "lon", "tvx", "tvy",
 def plot_antenna_pattern(
     data: xr.DataArray,
     x: str,
-    ax: Optional[plt.Axes] = None,
+    ax: plt.Axes | None = None,
     plot_type="line",
     projection="polar",
     yspan: float = 40,
-    ymax: Optional[float] = None,
+    ymax: float | None = None,
     quantity: str = "db",
     animate: bool = False,
     **kwargs,
-) -> Union[plt.Axes, animation.Animation]:
+) -> plt.Axes | animation.Animation:
     """
     Convenience function for platting antenna pattern. Takes xr.DataArray and will format polar antenna plot.
 
@@ -55,7 +54,7 @@ def plot_antenna_pattern(
     animate : bool
         Whether to animate the plot
 
-    Returns
+    Returns:
     -------
     ax : plt.Axes, animation.Animation
         Axes handle of the plot or Animation instance for animated plots
@@ -195,7 +194,7 @@ def plot_antenna_pattern(
         )
 
         return ani
-    elif len(data.shape) > 2 and animate is not False and isinstance(projection, ccrs.Projection):
+    if len(data.shape) > 2 and animate is not False and isinstance(projection, ccrs.Projection):
         # Initialize plot
         extent = np.array(
             [
@@ -203,7 +202,7 @@ def plot_antenna_pattern(
                 data.lon.max() + 0.05,
                 data.lat.min() - 0.05,
                 data.lat.max() + 0.05,
-            ]
+            ],
         )
         data.isel({animate: 0}).plot(
             transform=ccrs.PlateCarree(),  # the data's projection
@@ -215,13 +214,16 @@ def plot_antenna_pattern(
 
         ax.set_extent(extent)  # set extents
         ax.set_xticks(
-            np.linspace(extent[0], extent[1], 5), crs=ccrs.PlateCarree()
+            np.linspace(extent[0], extent[1], 5),
+            crs=ccrs.PlateCarree(),
         )  # set longitude indicators
         ax.set_yticks(
-            np.linspace(extent[2], extent[3], 7)[1:], crs=ccrs.PlateCarree()
+            np.linspace(extent[2], extent[3], 7)[1:],
+            crs=ccrs.PlateCarree(),
         )  # set latitude indicators
         lon_formatter = LongitudeFormatter(
-            number_format="0.2f", dateline_direction_label=True
+            number_format="0.2f",
+            dateline_direction_label=True,
         )  # format lons
         lat_formatter = LatitudeFormatter(number_format="0.2f")  # format lats
         ax.xaxis.set_major_formatter(lon_formatter)  # set lons
@@ -230,9 +232,9 @@ def plot_antenna_pattern(
         ax.set_xlabel("")
         ax.set_ylabel("")
         scale = np.ceil(
-            -np.sqrt(2) * np.log(np.divide((extent[1] - extent[0]) / 2.0, 350.0))
+            -np.sqrt(2) * np.log(np.divide((extent[1] - extent[0]) / 2.0, 350.0)),
         )  # empirical solve for scale based on zoom
-        scale = (scale < 20) and scale or 19  # scale cannot be larger than 19
+        scale = ((scale < 20) and scale) or 19  # scale cannot be larger than 19
         ax.add_image(osm_img, int(scale))  # add OSM with zoom specification
 
         def antenna_movie(i):
@@ -241,7 +243,7 @@ def plot_antenna_pattern(
                 ax.remove()
             # Add axes in
             ax = plt.axes(
-                projection=osm_img.crs
+                projection=osm_img.crs,
             )  # project using coordinate reference system (CRS) of street map
             # Plot DataArray
             data.isel({animate: i}).plot(
@@ -253,13 +255,16 @@ def plot_antenna_pattern(
             )
             ax.set_extent(extent)  # set extents
             ax.set_xticks(
-                np.linspace(extent[0], extent[1], 5), crs=ccrs.PlateCarree()
+                np.linspace(extent[0], extent[1], 5),
+                crs=ccrs.PlateCarree(),
             )  # set longitude indicators
             ax.set_yticks(
-                np.linspace(extent[2], extent[3], 7)[1:], crs=ccrs.PlateCarree()
+                np.linspace(extent[2], extent[3], 7)[1:],
+                crs=ccrs.PlateCarree(),
             )  # set latitude indicators
             lon_formatter = LongitudeFormatter(
-                number_format="0.2f", dateline_direction_label=True
+                number_format="0.2f",
+                dateline_direction_label=True,
             )  # format lons
             lat_formatter = LatitudeFormatter(number_format="0.2f")  # format lats
             ax.xaxis.set_major_formatter(lon_formatter)  # set lons
@@ -268,9 +273,9 @@ def plot_antenna_pattern(
             ax.set_xlabel("")
             ax.set_ylabel("")
             scale = np.ceil(
-                -np.sqrt(2) * np.log(np.divide((extent[1] - extent[0]) / 2.0, 350.0))
+                -np.sqrt(2) * np.log(np.divide((extent[1] - extent[0]) / 2.0, 350.0)),
             )  # empirical solve for scale based on zoom
-            scale = (scale < 20) and scale or 19  # scale cannot be larger than 19
+            scale = ((scale < 20) and scale) or 19  # scale cannot be larger than 19
             ax.add_image(osm_img, int(scale))  # add OSM with zoom specification
 
             return (ax.collections[0],)
@@ -285,66 +290,67 @@ def plot_antenna_pattern(
 
         return ani
 
+    # Plot
+    if plot_type == "line":
+        data.plot.line(x=x, **kwargs, ax=ax)
     else:
-        # Plot
-        if plot_type == "line":
-            data.plot.line(x=x, **kwargs, ax=ax)
-        else:
-            data.plot(
-                x=x,
-                **{**dict(alpha=0.8, vmin=datamin, vmax=datamax, cmap=plt.cm.viridis), **kwargs},
+        data.plot(
+            x=x,
+            **{**dict(alpha=0.8, vmin=datamin, vmax=datamax, cmap=plt.cm.viridis), **kwargs},
+        )
+
+    # Scale yaxis - needs to be done after plotting
+    if isinstance(projection, str):
+        if projection.lower() == "polar":
+            ax.set_rmax(datamax)
+            ax.set_rmin(datamin)
+            rgrids = np.linspace(datamin, datamax, 5)
+            ax.set_rgrids(
+                rgrids,
+                labels=[""] + [f"{i}" for i in rgrids[1:-1]] + [f"{rgrids[-1]} dBi"],
+                angle=45,
+                fmt=None,
             )
-
-        # Scale yaxis - needs to be done after plotting
-        if isinstance(projection, str):
-            if projection.lower() == "polar":
-                ax.set_rmax(datamax)
-                ax.set_rmin(datamin)
-                rgrids = np.linspace(datamin, datamax, 5)
-                ax.set_rgrids(
-                    rgrids,
-                    labels=[""] + [f"{i}" for i in rgrids[1:-1]] + [f"{rgrids[-1]} dBi"],
-                    angle=45,
-                    fmt=None,
-                )
-                # Remove ylabel
-                ax.set_ylabel("")
-            else:
-                if plot_type != "quadmesh" and plot_type != "pcolormesh":
-                    ax.set_ylim(datamin, datamax)
-        elif isinstance(projection, ccrs.Projection):
-            extent = np.array(
-                [
-                    data.lon.min() - 0.05,
-                    data.lon.max() + 0.05,
-                    data.lat.min() - 0.05,
-                    data.lat.max() + 0.05,
-                ]
-            )
-
-            ax.set_extent(extent)  # set extents
-            ax.set_xticks(
-                np.linspace(extent[0], extent[1], 5), crs=ccrs.PlateCarree()
-            )  # set longitude indicators
-            ax.set_yticks(
-                np.linspace(extent[2], extent[3], 5)[1:], crs=ccrs.PlateCarree()
-            )  # set latitude indicators
-            lon_formatter = LongitudeFormatter(
-                number_format="0.2f", dateline_direction_label=True
-            )  # format lons
-            lat_formatter = LatitudeFormatter(number_format="0.2f")  # format lats
-            ax.xaxis.set_major_formatter(lon_formatter)  # set lons
-            ax.yaxis.set_major_formatter(lat_formatter)  # set lats
-
-            ax.set_xlabel("")
+            # Remove ylabel
             ax.set_ylabel("")
-            scale = np.ceil(
-                -np.sqrt(2) * np.log(np.divide((extent[1] - extent[0]) / 2.0, 350.0))
-            )  # empirical solve for scale based on zoom
-            scale = (scale < 20) and scale or 19  # scale cannot be larger than 19
-            ax.add_image(osm_img, int(scale))  # add OSM with zoom specification
+        elif plot_type != "quadmesh" and plot_type != "pcolormesh":
+            ax.set_ylim(datamin, datamax)
+    elif isinstance(projection, ccrs.Projection):
+        extent = np.array(
+            [
+                data.lon.min() - 0.05,
+                data.lon.max() + 0.05,
+                data.lat.min() - 0.05,
+                data.lat.max() + 0.05,
+            ],
+        )
 
-        return ax
+        ax.set_extent(extent)  # set extents
+        ax.set_xticks(
+            np.linspace(extent[0], extent[1], 5),
+            crs=ccrs.PlateCarree(),
+        )  # set longitude indicators
+        ax.set_yticks(
+            np.linspace(extent[2], extent[3], 5)[1:],
+            crs=ccrs.PlateCarree(),
+        )  # set latitude indicators
+        lon_formatter = LongitudeFormatter(
+            number_format="0.2f",
+            dateline_direction_label=True,
+        )  # format lons
+        lat_formatter = LatitudeFormatter(number_format="0.2f")  # format lats
+        ax.xaxis.set_major_formatter(lon_formatter)  # set lons
+        ax.yaxis.set_major_formatter(lat_formatter)  # set lats
+
+        ax.set_xlabel("")
+        ax.set_ylabel("")
+        scale = np.ceil(
+            -np.sqrt(2) * np.log(np.divide((extent[1] - extent[0]) / 2.0, 350.0)),
+        )  # empirical solve for scale based on zoom
+        scale = ((scale < 20) and scale) or 19  # scale cannot be larger than 19
+        ax.add_image(osm_img, int(scale))  # add OSM with zoom specification
+
+    return ax
 
 
 def lm_fill_color(feature):

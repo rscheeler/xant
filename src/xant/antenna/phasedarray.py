@@ -10,16 +10,15 @@ import numpy as np
 import xarray as xr
 from hics import HCS
 from hics.plotting import viewcs
-from hics.utils import vector_norm
 from loguru import logger
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import RegularPolygon
 from pint import Quantity
 from scipy.spatial.transform import Rotation
+from xrench.units import ureg
+from xrench.xrutils import apply_rotation, vector_norm
 
 from ..utils import conversions
-from ..utils.geometry import apply_rotation
-from ..utils.units import ureg
 from .core import Antenna, AntennaFunction, concat
 
 

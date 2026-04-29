@@ -5,10 +5,9 @@ import h3
 import numpy as np
 import xarray as xr
 from hics.geo.dem import llh2geocent
-from hics.utils import vector_norm
 from pint import Quantity
-
-from ..utils.units import ureg
+from xrench.units import ureg
+from xrench.xrutils import vector_norm
 
 COORDINATE_DIMS = dict(
     phitheta=("phi", "theta"),

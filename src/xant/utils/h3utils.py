@@ -7,8 +7,7 @@ import xarray as xr
 from matplotlib import colors
 from matplotlib import pyplot as plt
 from shapely.geometry import Polygon
-
-from ..utils.units import ureg
+from xrench.units import ureg
 
 
 def ll2cell(row: gpd.GeoSeries, resolution: int = 5) -> str:

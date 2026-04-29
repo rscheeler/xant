@@ -1,3 +1,3 @@
-from hics.config import LOGCONTROLLER
+from xrench.logcontrol import LOGCONTROLLER
 
 XANTLogger = LOGCONTROLLER(module_name="xant")
