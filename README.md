@@ -1,4 +1,4 @@
-# :satellite: xant
+# 📡 xant
 
 Spatial antenna analysis with xarray.
 
