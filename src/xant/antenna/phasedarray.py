@@ -23,6 +23,24 @@ from .core import Antenna, AntennaFunction, concat
 
 
 class AntennaArray:
+    """
+    Class for representing an array of antennas. Can be made up of either Antenna or
+    AntennaArray elements. The array factor is calculated based on the positions of
+    the elements and their excitations. The total pattern is calculated based on the
+    element patterns and their excitations.
+
+    Parameters
+    ----------
+    element : Antenna | AntennaArray
+        The antenna or antenna array element.
+    coordinate_systems : list[HCS]
+        The coordinate systems for each element.
+    broadcast_elements : bool, optional
+        Whether to broadcast the elements, by default False.
+    steering_method : str, optional
+        The steering method to use, by default None.
+    """
+
     def __init__(
         self,
         element: Antenna | AntennaArray,
@@ -49,14 +67,12 @@ class AntennaArray:
         )
         # Check to see if elements need to be broadcasted
         rot_bools = []
-        iden_quat = Rotation.from_matrix(np.eye(3)).as_quat()
-        # logger.warning(f"iden_quat {iden_quat}")
-        # logger.warning(f"Identity rotation id {id(iden_quat)}")
+        iden_rot = np.eye(3)
         for x in [cs.rotation for cs in coordinate_systems]:
             if isinstance(x, Rotation):
-                rot_bools.append(all(x.as_quat() == iden_quat))
+                rot_bools.append(np.allclose(x.as_matrix(), iden_rot))
             elif isinstance(x, xr.DataArray):
-                rot_bools.append(all(all(xi.as_quat() == iden_quat) for xi in x))
+                rot_bools.append(all(np.allclose(xi.as_matrix(), iden_rot) for xi in x))
         if not all(rot_bools):
             # Broadcast element based on rotation and remove rotation from element coordinate systems
             elements = []
@@ -80,13 +96,15 @@ class AntennaArray:
             if isinstance(el, Antenna):
                 element = concat(element, dict(port=port))
 
-        if broadcast_elements:
+        elif broadcast_elements:
             els = []
             for cs in coordinate_systems:
                 el = element.copy()
                 el.move(cs)
                 els.append(el)
             element = np.array(els)
+            if isinstance(els[0], Antenna):
+                element = concat(element, dict(port=port))
         # Store element and coordinate systems
         self.element = element
         self.coordinate_systems = coordinate_systems
@@ -104,14 +122,44 @@ class AntennaArray:
         self._af = None
 
     @classmethod
-    def rectangular(cls, element, nx, dx, ny, dy, cs_reference, **kwargs):
+    def rectangular(
+        cls,
+        element: Antenna | AntennaArray,
+        nx: int,
+        dx: Quantity,
+        ny: int,
+        dy: Quantity,
+        cs_reference: HCS,
+        **kwargs,
+    ):
         """
-        Classmethod for making a rectangular array
+        Classmethod for making a rectangular array.
+
+        Parameters
+        ----------
+        element : Antenna | AntennaArray
+            The antenna or antenna array element.
+        nx : int
+            Number of elements in the x-direction.
+        dx : Quantity
+            Spacing between elements in the x-direction.
+        ny : int
+            Number of elements in the y-direction.
+        dy : Quantity
+            Spacing between elements in the y-direction.
+        cs_reference : HCS
+            The reference coordinate system.
+
+        Returns:
+        -------
+        AntennaArray
+            The rectangular array.
+
         """
         # Create Grid of points
-        nx = np.arange(nx).astype(np.float64)
-        ny = np.arange(ny).astype(np.float64)
-        xs, ys = np.meshgrid(nx, ny)
+        ix = np.arange(nx).astype(np.float64)
+        iy = np.arange(ny).astype(np.float64)
+        xs, ys = np.meshgrid(ix, iy)
         xs *= dx
         ys *= dy
         xs = xs.to_base_units()
@@ -132,19 +180,35 @@ class AntennaArray:
         return cls(element, coordinate_systems, **kwargs)
 
     @classmethod
-    def triangular(cls, element, nx, ny, dx, cs_reference, **kwargs):
+    def triangular(
+        cls,
+        element: Antenna | AntennaArray,
+        nx: int,
+        ny: int,
+        dx: Quantity,
+        cs_reference: HCS,
+        **kwargs,
+    ):
         """
-        Classmethod for making a triangular array
+        Classmethod for making a triangular array.
 
         Parameters
         ----------
+        element : Antenna | AntennaArray
+            The antenna or antenna array element.
         nx : int
             Number of elements in the x-direction.
         ny : int
             Number of elements in the y-direction.
         dx : Quantity
             Spacing between elements (will be spacing in x-dimension)
+        cs_reference : HCS
+            The reference coordinate system.
 
+        Returns:
+        -------
+        AntennaArray
+            The triangular array.
         """
         # Create Grid of points
         nx = np.arange(nx).astype(np.float64)
@@ -173,9 +237,7 @@ class AntennaArray:
 
     @property
     def has_children(self) -> bool:
-        """
-        Determines if there are any AntennaArrays in the element
-        """
+        """Determines if there are any AntennaArrays in the element."""
         _has_children = False
         if not isinstance(self.element, Antenna):
             if isinstance(self.element, np.ndarray):
@@ -213,10 +275,8 @@ class AntennaArray:
         # self.initialize()
 
     @property
-    def tpf(self):
-        """
-        Translated phase factor.
-        """
+    def tpf(self) -> TranslatedPhase:
+        """Translated phase factor."""
         if self._tpf is None:
             self._tpf = TranslatedPhase(
                 self.frequency.data,
@@ -226,9 +286,7 @@ class AntennaArray:
 
     @property
     def elements(self):
-        """
-        Returns translated elements.
-        """
+        """Returns translated elements."""
         # if self._elements is None:
         if isinstance(self.element, Antenna):
             self._elements = self.element * self.tpf
@@ -248,8 +306,8 @@ class AntennaArray:
         return self._elements
 
     @property
-    def total(self):
-        """Returns the sum of the elements multiplied by their excitation"""
+    def total(self) -> Antenna:
+        """Returns the sum of the elements multiplied by their excitation."""
         # if self._total is None:
         self._total = (self.elements * self.excitation).sum(dim="port") / vector_norm(
             np.abs(self.excitation),
@@ -258,10 +316,8 @@ class AntennaArray:
         return self._total
 
     @property
-    def af(self):
-        """
-        Returns the array factor of the array.
-        """
+    def af(self) -> xr.DataArray:
+        """Returns the array factor of the array."""
         # if self._af is None:
         self._af = (self.tpf * self.excitation).sum(dim="port") / vector_norm(
             np.abs(self.excitation),
@@ -269,13 +325,11 @@ class AntennaArray:
         )
         return self._af
 
-    def move(self, cs: HCS):
-        """
-        Move to a new reference CS. Iterates over cs references.
-        """
-        if isinstance(cs, HCS):
+    def move(self, hcs: HCS) -> None:
+        """Move to a new reference CS. Iterates over cs references."""
+        if isinstance(hcs, HCS):
             for ecs in self.coordinate_systems:
-                ecs.reference = cs
+                ecs.reference = hcs
 
             self.initialize()
 
@@ -287,7 +341,7 @@ class AntennaArray:
         else:
             raise ValueError("Must be a HCS instance.")
 
-    def positions(self, reference: HCS = None, recursive: bool = True, level=0):
+    def positions(self, reference: HCS = None, recursive: bool = True, level: int = 0):
         if reference is None:
             reference = self.coordinate_systems[0].reference
         # Determine how to step recursively through
@@ -371,9 +425,9 @@ class AntennaArray:
         units: str = "cm",
         unit_shape: str = "circle",
         color_type: str = "shape",
-        cmap=plt.get_cmap("viridis"),
+        cmap: plt.Colormap = plt.get_cmap("viridis"),
         **kwargs,
-    ):
+    ) -> plt.Axes:
         """
         Show elements as circles in xy-plane. Will show the coordinate system of each
         element in the reference coordinate system of the array.
@@ -454,7 +508,7 @@ class AntennaArray:
 
         return ax
 
-    def _get_excitations(self, level=0):
+    def _get_excitations(self, level: int = 0) -> xr.DataArray:
         excitations = self.excitation
         # Determine whether to recurse (antenna or array)
         if isinstance(self.element, np.ndarray):
@@ -475,10 +529,8 @@ class AntennaArray:
             )
         return excitations
 
-    def copy(self):
-        """
-        Return a copy of self
-        """
+    def copy(self) -> AntennaArray:
+        """Return a copy of self."""
         cs = []
         for csi in self.coordinate_systems:
             csn = HCS(csi.origin, reference=csi.reference, rotation=csi.rotation)
@@ -493,15 +545,13 @@ class AntennaArray:
 
 
 class TranslatedPhase(Antenna):
-    """
-    Translated phase antenna pattern.
-    """
+    """Translated phase antenna pattern."""
 
     def __init__(
         self,
         frequency: Quantity,
         coordinate_systems: HCS | None = None,
-    ):
+    ) -> None:
         # Default Coordinates
         frequency = xr.DataArray(
             frequency,
@@ -526,6 +576,7 @@ class TranslatedPhase(Antenna):
             dims=("port",),
             coords=dict(port=np.arange(len(coordinate_systems))),
         )
+        # self._port_pos
         dims = ("polarization", "port", "frequency", "phi", "theta")
         coords = dict(polarization=["apolar"], port=port, frequency=frequency, phi=phi, theta=theta)
         antenna_function = AntennaFunction(dims, coords, self._antenna_func, "phitheta")
@@ -533,16 +584,14 @@ class TranslatedPhase(Antenna):
         super().__init__(antenna_function, coordinate_systems[0].reference)
 
     def _antenna_func(self, port=None, frequency=None, phi=None, theta=None):
-        """
-        Translated phase radiation pattern (isotropic with phase difference dependent on position).
-        """
+        """Translated phase radiation pattern (isotropic with phase difference dependent on position)."""
         # Determine propagation constant from wavelength
         lam = 1 / frequency * ureg.speed_of_light
-        lam.data = lam.data.to("m")
-        k = (2 * np.pi * ureg.radians) / lam
+        lam.data = lam.data.to_base_units().magnitude
+        k = (2 * np.pi) / lam
 
         # Spatial Phase
-        tmp = theta * phi
+        dimsgrid = theta * phi
         sp = np.array(
             [
                 np.sin(theta) * np.cos(phi),
@@ -552,31 +601,22 @@ class TranslatedPhase(Antenna):
         )
         sp = xr.DataArray(
             sp,
-            dims=["position"] + list(tmp.dims),
-            coords={**dict(position=["x", "y", "z"]), **tmp.coords},
+            dims=["position"] + list(dimsgrid.dims),
+            coords={**dict(position=["x", "y", "z"]), **dimsgrid.coords},
         )
 
         # Create position data array
-        port_pos = np.array(
-            [cs.origin.data.data.magnitude for cs in port.data.ravel()],
-        )  # assemble array
-        port_pos = port_pos.reshape(list(port.shape) + [3])  # reshape
-        port_pos *= port.data.ravel()[0].origin.original_units  # Convert back to quantity
-        # Create data array
-        pos = xr.DataArray(
-            port_pos,
-            dims=list(port.dims) + ["position"],
-            coords={**port.coords, **dict(position=["x", "y", "z"])},
+        # Take only port dimension
+        iport = port.isel(dict.fromkeys(set(port.dims) - {"port"}, 0))
+        pos = xr.concat(
+            [cs.origin.basemag for cs in iport.data.ravel()],
+            dim=iport.port,
         )
 
         # k * spatial phase mapping
         kds = k * pos * sp
-        kdsunits = kds.data.units
+        # kdsunits = kds.data.units
         kds = kds.sum(dim="position")
-        kds.data = kds.data * kdsunits
-        # Ensure data properly formatted
-        kds.data = kds.data.to_base_units().magnitude.astype(np.float64) * ureg.radian
-
         # Element phase
         data = np.exp(1j * kds)
 
@@ -597,7 +637,7 @@ def get_position_in_base(
 ):
     """
     Dispersive phase steering where constant phase is determined and the desired steering frequency. Sets the excitation
-    property of the input array
+    property of the input array.
     """
     # Default convert kwargs
     if convert_kwargs is None:
@@ -772,20 +812,17 @@ def steer_phase_centers(
 
     # Wavelength and propagation constant
     lam = 1 / frequency * ureg.speed_of_light
-    lam = lam.to("m")
-    k = (2 * np.pi * ureg.radians) / lam
-    k = k.to_base_units()
+    lam = lam.to_base_units().magnitude
+    k = (2 * np.pi) / lam
 
     # Port
     port = phased_array.tpf.data.coords["port"]
 
     # Create position data array
-    pos = []
-    for cs, coord in zip(port.data, port.port):
-        da = cs.origin.copy()
-        da = da.assign_coords(dict(port=coord))
-        pos.append(da)
-    pos = xr.concat(pos, dim="port")
+    pos = xr.concat(
+        [cs.origin.basemag for cs in port.data.ravel()],
+        dim=port.port,
+    )
 
     # Phase Progression is just the negative of the spatial phase factor
     sp = [np.sin(t0) * np.cos(p0), np.sin(t0) * np.sin(p0), np.cos(t0)]
@@ -809,30 +846,30 @@ def steer_phase_centers(
 
 
 def plot_grating_lobe_diagram(
-    dx,
-    dy,
-    steering_angles,
-    lattice_type="rectangular",
-    max_scan=60 * ureg.degree,
-    figsize=(8, 8),
-    show_pairs=None,
-):
+    dx: float,
+    dy: float,
+    steering_angles: tuple,
+    lattice_type: str = "rectangular",
+    max_scan: Quantity = 60 * ureg.degree,
+    figsize: tuple = (8, 8),
+    show_pairs: bool | None = None,
+) -> plt.Axes:
     """
     Plots the grating lobe diagram for a 2D phased array with grid.
 
     Parameters
     ----------
-        dx : float
-            x-spacing in wavelengths
-        dy : float
-            y-spacing in wavelengths
-        steering_angles_deg : tuple
-            Tuple of steering angles (phi, theta) in degrees.
-        lattice_type:str
-            'rectangular' or 'triangular' lattice type.
-        max_scan: Quantity
-            Maximum scan (theta) to draw circle
-        steering_angles_deg: Tuple of steering angles (azimuth, elevation) in degrees.
+    dx : float
+        x-spacing in wavelengths
+    dy : float
+        y-spacing in wavelengths
+    steering_angles_deg : tuple
+        Tuple of steering angles (phi, theta) in degrees.
+    lattice_type:str
+        'rectangular' or 'triangular' lattice type.
+    max_scan: Quantity
+        Maximum scan (theta) to draw circle
+    steering_angles_deg: Tuple of steering angles (azimuth, elevation) in degrees.
 
 
     Reference

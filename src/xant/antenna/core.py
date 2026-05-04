@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import operator as opr
-import warnings
 from collections import OrderedDict
 from collections.abc import Callable
 from copy import deepcopy
@@ -24,8 +23,6 @@ from xrench.xrutils import apply_rotation
 from ..utils import conversions
 from ..utils.calc import fast_nearest_indices
 from . import polarization
-
-warnings.filterwarnings("ignore")
 
 
 class Antenna:
@@ -50,7 +47,7 @@ class Antenna:
         # Make sure if str is passed implying file import that it is converted to Path object
         if isinstance(data, (str, Path)):
             data = Path(data)
-            if data.suffix == ".antnc":
+            if data.suffix == ".xant":
                 data = xr.open_dataarray(data, engine="h5netcdf")
         self.data = data
 
@@ -276,17 +273,6 @@ class Antenna:
                 for i in range(coeffs.shape[0])
             ],
         )
-
-        # for i in range(coeffs.shape[0]):
-        #     data.append(
-        #         map_coordinates(
-        #             coeffs[i, ...],
-        #             pixel_coords,
-        #             order=order,
-        #             prefilter=False,
-        #             mode="nearest",
-        #         ).reshape(idxs[0].shape),
-        #     )
 
         # Make into DataArray
         addeddims = ["polarization"]
@@ -631,7 +617,7 @@ class Antenna:
     def export(self, filename: Path):
         """Exports data to a NetCDF file using the h5netcdf engine."""
         # Create a dataset that contains the complex data
-        self.data.to_netcdf(Path(filename).with_suffix(".antnc"), engine="h5netcdf")
+        self.data.to_netcdf(Path(filename).with_suffix(".xant"), engine="h5netcdf")
 
     def copy(self):
         """Return a copy of self."""

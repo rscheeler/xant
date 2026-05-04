@@ -71,6 +71,10 @@ tests = { cmd = "pytest --verbose --color=yes tests", help = "Run all tests usin
 nox = { cmd = "nox -s tests", help = "Run tests in a nox session" }
 coverage = { cmd = "coverage run -m pytest tests && coverage report", help = "Generate coverage report" }
 run = { cmd = "uv run ./src/xant/xant.py", help = "Run main application" }
+bump-patch   = { cmd = "python scripts/bump.py patch",   help = "Bump patch version and commit" }
+bump-minor   = { cmd = "python scripts/bump.py minor",   help = "Bump minor version and commit" }
+bump-major   = { cmd = "python scripts/bump.py major",   help = "Bump major version and commit" }
+tag-and-push = { cmd = "python scripts/bump.py tag-and-push", help = "Tag current version and push to origin" }
 
 [tool.ruff]
 line-length = 100

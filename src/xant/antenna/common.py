@@ -78,7 +78,7 @@ class Dipole(Antenna):
         etot = xr.concat((etheta, ephi), dim="polarization")
 
         # Set nans to 0
-        etot.fillna(0)
+        etot = etot.fillna(0)
 
         return etot
 
@@ -359,7 +359,7 @@ class DipoleAboveGround(Antenna):
                     reference=hcs,
                 ),
             ]
-        elif orientation.lower() == "y":
+        elif orientation.lower() == "z":
             arrcs = [
                 HCS(
                     (0, 0, h.magnitude) * h.units,
