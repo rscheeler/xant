@@ -351,8 +351,7 @@ class AntennaArray:
                 if isinstance(e, AntennaArray):
                     pos = e.positions(reference=reference, recursive=recursive, level=level + 1)
                 else:
-                    pos = reference.relative_position(cs)
-                pos.data = pos.data.to_base_units()
+                    pos = reference.relative_position_basemag(cs)
                 poss.append(pos.assign_coords(**{f"level{level + 1}": idx}))
             positions = xr.concat(poss, dim=f"level{level + 1}")
         elif recursive and isinstance(self.element, AntennaArray):
@@ -365,7 +364,6 @@ class AntennaArray:
                     elcs.reference = cs
                 # Get positions
                 pos = atemp.positions(reference=reference, recursive=recursive, level=level + 1)
-                pos.data = pos.data.to_base_units()
                 poss.append(pos.assign_coords(**{f"level{level + 1}": idx}))
 
             positions = xr.concat(poss, dim=f"level{level + 1}")
@@ -373,7 +371,7 @@ class AntennaArray:
             # Create position data array
             positions = xr.concat(
                 [
-                    reference.relative_position(cs).assign_coords(port=idx)
+                    reference.relative_position_basemag(cs).assign_coords(port=idx)
                     for idx, cs in enumerate(self.coordinate_systems)
                 ],
                 dim="port",
@@ -471,7 +469,7 @@ class AntennaArray:
         # Take time at first index if time in dims
         if "time" in centers.dims:
             centers = centers.isel(time=0)
-        centers.data = centers.data.to(units)
+        centers.data = (centers.data * ureg.get_base_units(ureg.m)[1]).to(units)
         if color_type.lower() == "subarray":
             tmp = centers.values
             l = tmp.reshape(-1, *list(tmp.shape[-2:])).shape[0]
@@ -715,7 +713,6 @@ def apply_taper(
         cs = phased_array.coordinate_systems[0].reference
     if not isinstance(window, xr.DataArray):
         positions = phased_array.positions(reference=cs, recursive=True)
-        positions.data = positions.data.to_base_units().magnitude
         posdim = positions.sel(position=dim)
         window = xr.DataArray(
             window,
@@ -742,7 +739,6 @@ def apply_taper(
     if isinstance(phased_array.element, AntennaArray):
         raise NotImplementedError("Cannot taper subarrays unless they are broadcasted.")
     pos = phased_array.positions(reference=cs, recursive=False)
-    pos.data = pos.data.to_base_units().magnitude
     posdim = pos.sel(position=dim)
     # Get window
     windowed = window.interp({dim: posdim}).drop_vars(["position", dim])
