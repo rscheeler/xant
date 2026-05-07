@@ -120,7 +120,7 @@ def llh2uvw(lat=None, lon=None, h=None, hagl=True, reference_cs=None):
     # Convert into a DataArray
     if isinstance(x, xr.DataArray):
         position = []
-        for da, coord in zip((x, y, z), ["x", "y", "z"]):
+        for da, coord in zip((x, y, z), ["x", "y", "z"], strict=False):
             da = da.assign_coords(dict(position=coord))
             position.append(da)
         position = xr.concat(position, dim="position")
@@ -186,7 +186,7 @@ def ecef2uvw(x=None, y=None, z=None, reference_cs=None):
     # Convert into a DataArray
     if isinstance(x, xr.DataArray):
         position = []
-        for da, coord in zip((x, y, z), ["x", "y", "z"]):
+        for da, coord in zip((x, y, z), ["x", "y", "z"], strict=False):
             da = da.assign_coords(dict(position=coord))
             position.append(da)
         position = xr.concat(position, dim="position")
@@ -225,7 +225,7 @@ def cartesian2uvw(x=None, y=None, z=None):
     # Convert into a DataArray
     if isinstance(x, xr.DataArray):
         position = []
-        for da, coord in zip((x, y, z), ["x", "y", "z"]):
+        for da, coord in zip((x, y, z), ["x", "y", "z"], strict=False):
             da = da.assign_coords(dict(position=coord))
             position.append(da)
         position = xr.concat(position, dim="position")
@@ -299,7 +299,8 @@ def arcsin2uvw(
     """Arcsin projection. Unit square for upper hemisphere."""
     u = np.sin(au)
     v = np.sin(av)
-    w = np.sqrt(u**2 + v**2)
+    w_sq = 1 - (u**2 + v**2)
+    w = np.sqrt(np.clip(w_sq, 0, None))
 
     return u, v, w
 

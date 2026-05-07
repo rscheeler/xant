@@ -30,6 +30,32 @@ from . import propagators
 plt.rcParams["animation.html"] = "jshtml"
 
 
+def _setup_map_axes(ax: plt.Axes, osm_img: cimgt.GoogleTiles, extent: np.ndarray) -> None:
+    """Configure map axes with extent, tick formatters, and OSM tile overlay."""
+    ax.set_extent(extent)
+    ax.set_xticks(
+        np.linspace(extent[0], extent[1], 5),
+        crs=ccrs.PlateCarree(),
+    )
+    ax.set_yticks(
+        np.linspace(extent[2], extent[3], 7)[1:],
+        crs=ccrs.PlateCarree(),
+    )
+    ax.xaxis.set_major_formatter(
+        LongitudeFormatter(number_format="0.2f", dateline_direction_label=True),
+    )
+    ax.yaxis.set_major_formatter(
+        LatitudeFormatter(number_format="0.2f"),
+    )
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    scale = np.ceil(
+        -np.sqrt(2) * np.log(np.divide((extent[1] - extent[0]) / 2.0, 350.0)),
+    )
+    scale = ((scale < 20) and scale) or 19
+    ax.add_image(osm_img, int(scale))
+
+
 def calculate_spatial_link(
     tx: Antenna,
     power: Quantity,
@@ -183,7 +209,7 @@ def calculate_spatial_link(
                 [-txa.to("degree").magnitude, -np.array([ra.to("degree").magnitude])[0], 90],
                 degrees=True,
             )
-            for txa, ra in zip(tx_ha.data, rel_azs[0].data)
+            for txa, ra in zip(tx_ha.data, rel_azs[0].data, strict=False)
         ]
         tx_rots = xr.DataArray(tx_rots, dims=tx_ha.dims, coords=tx_ha.coords)
 
@@ -214,7 +240,7 @@ def calculate_spatial_link(
                 [-rxa.to("degree").magnitude, -np.array([ra.to("degree").magnitude])[0], 90],
                 degrees=True,
             )
-            for rxa, ra in zip(rx_ha.data, rel_azs[1].data)
+            for rxa, ra in zip(rx_ha.data, rel_azs[1].data, strict=False)
         ]
         rx_rots = xr.DataArray(rx_rots, dims=rx_ha.dims, coords=rx_ha.coords)
         rx_pos = xr.DataArray(
@@ -485,7 +511,7 @@ def plot_transmit_pd(
         ],
     )
 
-    if len(data.shape) > 2 and animate != False:
+    if len(data.shape) > 2 and animate:
         # Initialize plot
         p = data.isel({animate: 0}).plot(
             transform=ccrs.PlateCarree(),  # the data's projection
@@ -495,30 +521,7 @@ def plot_transmit_pd(
             vmax=round2base(data.max().data.magnitude),
         )
 
-        ax.set_extent(extent)  # set extents
-        ax.set_xticks(
-            np.linspace(extent[0], extent[1], 5),
-            crs=ccrs.PlateCarree(),
-        )  # set longitude indicators
-        ax.set_yticks(
-            np.linspace(extent[2], extent[3], 7)[1:],
-            crs=ccrs.PlateCarree(),
-        )  # set latitude indicators
-        lon_formatter = LongitudeFormatter(
-            number_format="0.2f",
-            dateline_direction_label=True,
-        )  # format lons
-        lat_formatter = LatitudeFormatter(number_format="0.2f")  # format lats
-        ax.xaxis.set_major_formatter(lon_formatter)  # set lons
-        ax.yaxis.set_major_formatter(lat_formatter)  # set lats
-
-        ax.set_xlabel("")
-        ax.set_ylabel("")
-        scale = np.ceil(
-            -np.sqrt(2) * np.log(np.divide((extent[1] - extent[0]) / 2.0, 350.0)),
-        )  # empirical solve for scale based on zoom
-        scale = ((scale < 20) and scale) or 19  # scale cannot be larger than 19
-        ax.add_image(osm_img, int(scale))  # add OSM with zoom specification
+        _setup_map_axes(ax, osm_img, extent)
 
         def antenna_movie(i):
             # Delete the axes
@@ -536,30 +539,7 @@ def plot_transmit_pd(
                 vmin=round2base(data.max().data.magnitude) - vspan,
                 vmax=round2base(data.max().data.magnitude),
             )
-            ax.set_extent(extent)  # set extents
-            ax.set_xticks(
-                np.linspace(extent[0], extent[1], 5),
-                crs=ccrs.PlateCarree(),
-            )  # set longitude indicators
-            ax.set_yticks(
-                np.linspace(extent[2], extent[3], 7)[1:],
-                crs=ccrs.PlateCarree(),
-            )  # set latitude indicators
-            lon_formatter = LongitudeFormatter(
-                number_format="0.2f",
-                dateline_direction_label=True,
-            )  # format lons
-            lat_formatter = LatitudeFormatter(number_format="0.2f")  # format lats
-            ax.xaxis.set_major_formatter(lon_formatter)  # set lons
-            ax.yaxis.set_major_formatter(lat_formatter)  # set lats
-
-            ax.set_xlabel("")
-            ax.set_ylabel("")
-            scale = np.ceil(
-                -np.sqrt(2) * np.log(np.divide((extent[1] - extent[0]) / 2.0, 350.0)),
-            )  # empirical solve for scale based on zoom
-            scale = ((scale < 20) and scale) or 19  # scale cannot be larger than 19
-            ax.add_image(osm_img, int(scale))  # add OSM with zoom specification
+            _setup_map_axes(ax, osm_img, extent)
 
             return (ax.collections[0],)
 
@@ -589,30 +569,7 @@ def plot_transmit_pd(
             data.lat.max() + extra_extents_deg[1],
         ],
     )
-    ax.set_extent(extent)  # set extents
-    ax.set_xticks(
-        np.linspace(extent[0], extent[1], 5),
-        crs=ccrs.PlateCarree(),
-    )  # set longitude indicators
-    ax.set_yticks(
-        np.linspace(extent[2], extent[3], 7)[1:],
-        crs=ccrs.PlateCarree(),
-    )  # set latitude indicators
-    lon_formatter = LongitudeFormatter(
-        number_format="0.2f",
-        dateline_direction_label=True,
-    )  # format lons
-    lat_formatter = LatitudeFormatter(number_format="0.2f")  # format lats
-    ax.xaxis.set_major_formatter(lon_formatter)  # set lons
-    ax.yaxis.set_major_formatter(lat_formatter)  # set lats
-
-    ax.set_xlabel("")
-    ax.set_ylabel("")
-    scale = np.ceil(
-        -np.sqrt(2) * np.log(np.divide((extent[1] - extent[0]) / 2.0, 350.0)),
-    )  # empirical solve for scale based on zoom
-    scale = ((scale < 20) and scale) or 19  # scale cannot be larger than 19
-    ax.add_image(osm_img, int(scale))  # add OSM with zoom specification
+    _setup_map_axes(ax, osm_img, extent)
 
     return ax
 
@@ -658,7 +615,6 @@ def plot_link(
     osm_img = cimgt.GoogleTiles(style="street")
 
     if ax is None:
-        osm_img = cimgt.GoogleTiles(style="street")
         fig = plt.figure()  # open matplotlib figure
         ax = plt.axes(
             projection=osm_img.crs,
@@ -693,30 +649,7 @@ def plot_link(
         ],
     )
 
-    ax.set_extent(extent)  # set extents
-    ax.set_xticks(
-        np.linspace(extent[0], extent[1], 5),
-        crs=ccrs.PlateCarree(),
-    )  # set longitude indicators
-    ax.set_yticks(
-        np.linspace(extent[2], extent[3], 7)[1:],
-        crs=ccrs.PlateCarree(),
-    )  # set latitude indicators
-    lon_formatter = LongitudeFormatter(
-        number_format="0.2f",
-        dateline_direction_label=True,
-    )  # format lons
-    lat_formatter = LatitudeFormatter(number_format="0.2f")  # format lats
-    ax.xaxis.set_major_formatter(lon_formatter)  # set lons
-    ax.yaxis.set_major_formatter(lat_formatter)  # set lats
-
-    ax.set_xlabel("")
-    ax.set_ylabel("")
-    scale = np.ceil(
-        -np.sqrt(2) * np.log(np.divide((extent[1] - extent[0]) / 2.0, 350.0)),
-    )  # empirical solve for scale based on zoom
-    scale = ((scale < 20) and scale) or 19  # scale cannot be larger than 19
-    ax.add_image(osm_img, int(scale))  # add OSM with zoom specification
+    _setup_map_axes(ax, osm_img, extent)
 
     # Add in colorbar
     if colorbar:
@@ -1011,13 +944,14 @@ def view_link_horizon(
     sl = sl_m * sl_x + sl_b
     sl_dist = np.sqrt((sl_x - sl_x[0]) ** 2 + (sl - yta) ** 2)
     wavelength = (ureg.speed_of_light / (res.frequency.item() * ureg.Hz)).to("m").magnitude
-    los_line = LineString([(x, y) for x, y in zip(sl_x, sl)])
+    los_line = LineString([(x, y) for x, y in zip(sl_x, sl, strict=False)])
     surface_line = LineString(
         [
             (x, y)
             for x, y in zip(
                 ax.get_lines()[lcidx + 1].get_xdata(),
                 ax.get_lines()[lcidx + 1].get_ydata(),
+                strict=False,
             )
         ],
     )
@@ -1025,12 +959,14 @@ def view_link_horizon(
     if los_line.intersects(surface_line):
         los_c = "r"
     ax.plot(sl_x, sl, f"{los_c}-", lw=lw)
-    for fscl, fls in zip([1, 0.6], ["-", "--"]):
+    for fscl, fls in zip([1, 0.6], ["-", "--"], strict=False):
         fresnel_radius = fscl * np.sqrt(2 * wavelength * sl_dist * (1 - (sl_dist / sl_dist[-1])))
         fresnel_radius_x = sl_x * np.cos(los_ang) - fresnel_radius * np.sin(los_ang)
         fresnel_radius_py = sl_x * np.sin(los_ang) + fresnel_radius * np.cos(los_ang) + sl[0]
         fresnel_radius_ny = sl_x * np.sin(los_ang) - fresnel_radius * np.cos(los_ang) + sl[0]
-        fresnel_line = LineString([(x, y) for x, y in zip(fresnel_radius_x, fresnel_radius_ny)])
+        fresnel_line = LineString(
+            [(x, y) for x, y in zip(fresnel_radius_x, fresnel_radius_ny, strict=False)],
+        )
 
         frc = "C7"
         if fresnel_line.intersects(surface_line):
