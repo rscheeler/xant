@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from functools import partial
-from typing import Tuple, Union
+from typing import TYPE_CHECKING
 
 import h3
 import numpy as np
@@ -8,6 +10,9 @@ from hics.geo.dem import llh2geocent
 from pint import Quantity
 from xrench.units import ureg
 from xrench.xrutils import vector_norm
+
+if TYPE_CHECKING:
+    from hics import HCS
 
 COORDINATE_DIMS = dict(
     phitheta=("phi", "theta"),
@@ -45,10 +50,9 @@ def phitheta2uvw(
     # Pint quantities are handled in a different manner
     thresh = np.pi / 2
     shift = 10 ** (-eps)
-    if isinstance(theta.data, Quantity):
-        if theta.data.units == "degree":
-            thresh = np.rad2deg(thresh)
-            shift *= theta.data.units
+    if isinstance(theta.data, Quantity) and theta.data.units == "degree":
+        thresh = np.rad2deg(thresh)
+        shift *= theta.data.units
     theta_shift = theta.copy()
     theta_shift.data[theta.values < thresh] = theta_shift.data[theta.values < thresh] + shift
     theta_shift.data[theta.values > thresh] = theta_shift.data[theta.values > thresh] - shift
@@ -82,9 +86,8 @@ def uvw2phitheta(
     phi = np.arctan2(v, u)
     # Remove quantity if necessary before calculating theta
     w = w.copy()
-    if isinstance(w.data, Quantity):
-        if w.data.units != ureg.dimensionless:
-            w.data = w.data.magnitude
+    if isinstance(w.data, Quantity) and w.data.units != ureg.dimensionless:
+        w.data = w.data.magnitude
     # Make sure to clip or else w values such as 1.00000000001 will result in nans
     theta = np.arccos(np.clip(w, -1, 1))
 
@@ -105,16 +108,12 @@ def uvw2uvw(
     v: np.ndarray | xr.DataArray,
     w: np.ndarray | xr.DataArray,
 ) -> tuple[np.ndarray | xr.DataArray, np.ndarray | xr.DataArray, np.ndarray | xr.DataArray]:
-    """
-    Convenience function that just returns the inputs.
-    """
+    """Convenience function that just returns the inputs."""
     return u, v, w
 
 
 def llh2uvw(lat=None, lon=None, h=None, hagl=True, reference_cs=None):
-    """
-    Converts LLH to relative uvw.
-    """
+    """Converts LLH to relative uvw."""
     # Convert LLH to ECEF
     x, y, z = llh2geocent.transform(lat, lon, h, hagl=hagl)
 
@@ -156,10 +155,8 @@ def llh2uvw(lat=None, lon=None, h=None, hagl=True, reference_cs=None):
     return x, y, z
 
 
-def cs2uvw(self_cs, other_cs):
-    """
-    Get relative position in normalized u, v, w of other coordinate system.
-    """
+def cs2uvw(self_cs: HCS, other_cs: HCS):
+    """Get relative position in normalized u, v, w of other coordinate system."""
     # Get position relative to reference_cs
     rel_pos = self_cs.relative_position(other_cs.position)
     # Grab units if a Quantity
@@ -185,9 +182,7 @@ def cs2uvw(self_cs, other_cs):
 
 
 def ecef2uvw(x=None, y=None, z=None, reference_cs=None):
-    """
-    Converts ECEF to relative uvw.
-    """
+    """Converts ECEF to relative uvw."""
     # Convert into a DataArray
     if isinstance(x, xr.DataArray):
         position = []
@@ -290,9 +285,7 @@ def uv2uvw(
     u: np.ndarray | xr.DataArray,
     v: np.ndarray | xr.DataArray,
 ) -> tuple[np.ndarray | xr.DataArray, np.ndarray | xr.DataArray, np.ndarray | xr.DataArray]:
-    """
-    uv-projection where u and v define theta/phi. Unit circle for upper hemisphere.
-    """
+    """uv-projection where u and v define theta/phi. Unit circle for upper hemisphere."""
     phi = np.arctan2(v, u)
     theta = np.arcsin(np.sqrt(u**2 + v**2))
     u, v, w = phitheta2uvw(phi, theta)
@@ -303,9 +296,7 @@ def arcsin2uvw(
     au: np.ndarray | xr.DataArray,
     av: np.ndarray | xr.DataArray,
 ) -> tuple[np.ndarray | xr.DataArray, np.ndarray | xr.DataArray, np.ndarray | xr.DataArray]:
-    """
-    Arcsin projection. Unit square for upper hemisphere.
-    """
+    """Arcsin projection. Unit square for upper hemisphere."""
     u = np.sin(au)
     v = np.sin(av)
     w = np.sqrt(u**2 + v**2)
@@ -317,9 +308,7 @@ def trueview2uvw(
     tvx: np.ndarray | xr.DataArray,
     tvy: np.ndarray | xr.DataArray,
 ) -> tuple[np.ndarray | xr.DataArray, np.ndarray | xr.DataArray, np.ndarray | xr.DataArray]:
-    """
-    True-view projection. Unit square for upper hemisphere.
-    """
+    """True-view projection. Unit square for upper hemisphere."""
     xysr = np.sqrt(tvx**2 + tvy**2)
 
     u = np.sin(xysr) * np.cos(np.arctan2(tvy, tvx))
@@ -420,9 +409,7 @@ def h3grid2index(
     origin_latlong: tuple,
     resolution: int,
 ) -> xr.DataArray:
-    """
-    Convert h3 grid specified by array in i and j and origin lat,lon to h3 cells.
-    """
+    """Convert h3 grid specified by array in i and j and origin lat,lon to h3 cells."""
     # Find origin cell
     origin_cell = h3.latlng_to_cell(*origin_latlong, resolution)
 
@@ -446,9 +433,7 @@ def h3grid2ll(
     origin_latlong: tuple,
     resolution: int,
 ) -> tuple[xr.DataArray, xr.DataArray]:
-    """
-    Convert h3 grid to latitude and longitude.
-    """
+    """Convert h3 grid to latitude and longitude."""
     # Get cell indicies
     h3cells = h3grid2index(i, j, origin_latlong, resolution)
 
@@ -471,9 +456,7 @@ def h32uvw(
     hagl: bool = False,
     reference_cs=None,
 ) -> tuple[np.ndarray | xr.DataArray, np.ndarray | xr.DataArray, np.ndarray | xr.DataArray]:
-    """
-    Convert h3 grid into global local uvw by first getting lat, lon, height.
-    """
+    """Convert h3 grid into global local uvw by first getting lat, lon, height."""
     # Get lat, lon
     lat, lon = h3grid2ll(i, j, origin_latlong, resolution)
 

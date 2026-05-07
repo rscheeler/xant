@@ -424,6 +424,7 @@ class AntennaArray:
         unit_shape: str = "circle",
         color_type: str = "shape",
         cmap: plt.Colormap = plt.get_cmap("viridis"),
+        exc_isel: dict = {},
         **kwargs,
     ) -> plt.Axes:
         """
@@ -441,12 +442,12 @@ class AntennaArray:
         if color_type.lower() == "shape":
             pass
         elif color_type.lower() == "mag":
-            exc = 20 * np.log10(np.abs(self._get_excitations())).values.ravel()
+            exc = 20 * np.log10(np.abs(self._get_excitations(isel=exc_isel))).values.ravel()
             norm = plt.Normalize(vmin=exc.max() - 20, vmax=exc.max())
             colors = cmap(norm(exc))
             kwargs = {**kwargs, **dict(facecolors=colors)}
         elif color_type.lower() == "phase":
-            exc = np.angle(self._get_excitations().values, deg=True).ravel()
+            exc = np.angle(self._get_excitations(isel=exc_isel).values, deg=True).ravel()
             cmap = plt.get_cmap("viridis")
             norm = plt.Normalize(vmin=-180, vmax=180)
             colors = cmap(norm(exc))
@@ -506,20 +507,22 @@ class AntennaArray:
 
         return ax
 
-    def _get_excitations(self, level: int = 0) -> xr.DataArray:
+    def _get_excitations(self, level: int = 0, isel: dict = {}) -> xr.DataArray:
         excitations = self.excitation
+        if isel:
+            excitations = excitations.isel({k: v for k, v in isel.items() if k in excitations.dims})
+
         # Determine whether to recurse (antenna or array)
         if isinstance(self.element, np.ndarray):
             # TODO Not sure how to handle this as it could be sparse
             excs = []
             for idx, (e, ei) in enumerate(zip(self.element, excitations)):
                 if isinstance(e, AntennaArray):
-                    exc = e._get_excitations(level=level + 1)
+                    exc = e._get_excitations(level=level + 1, isel=isel)
                     excs.append((ei * exc).assign_coords(**{f"level{level + 1}": idx}))
             excitations = xr.concat(excs, dim=f"level{level + 1}")
         elif isinstance(self.element, AntennaArray):
-            subexc = self.element._get_excitations(level=level + 1)
-
+            subexc = self.element._get_excitations(level=level + 1, isel=isel)
             excitations = xr.DataArray(
                 np.outer(excitations, subexc),
                 dims=("port", f"level{level + 1}"),

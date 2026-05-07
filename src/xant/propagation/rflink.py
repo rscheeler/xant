@@ -283,7 +283,12 @@ def calculate_spatial_link(
 
     # In order to account for the potential asymmetric propagation loss of the individual horizontal and vertical
     # components
-    incident_pd = tx_gain / np.sqrt(prop_loss)
+    if tx_gain.polarization.size == 1 and "polarization" in prop_loss.dims:
+        # Apolar antenna — no polarization to project onto H/V ITM loss.
+        # Use worst-case (max) polarization loss as a conservative estimate
+        incident_pd = tx_gain / np.sqrt(prop_loss.max(dim="polarization"))
+    else:
+        incident_pd = tx_gain / np.sqrt(prop_loss)
     tx_pl_rx = incident_pd * rx_gain
 
     # Get RX gain by dividing the RX power by the incident power density
@@ -304,8 +309,8 @@ def calculate_spatial_link(
         ) ** 2
         total_prop = (total_prop.assign_coords(polarization="total")).expand_dims("polarization")
         # RFLINK ITM includes the reference attenuation which can be different for h/v polarization
-        if "rflink" in propagation and "ref" in prop_loss.coords.keys():
-            if "polarization" in prop_loss.ref.coords.keys():
+        if "rflink" in propagation and "ref" in prop_loss.coords:
+            if "polarization" in prop_loss.ref.coords:
                 reftot = vector_norm(prop_loss.ref, "polarization")
                 total_prop = total_prop.assign_coords(ref=reftot)
         prop_loss = prop_loss.drop_vars("ipol")
@@ -397,13 +402,13 @@ def transmit_power_density(
     data = data.assign_coords(lat=(data.lat.data * ureg.radians).to("degrees"))
 
     # Make a coordinate system for the receive points
-    glat, glon, galt = xr.broadcast(data.lat, data.lon, data.alt)
+    glat, glon, gh = xr.broadcast(data.lat, data.lon, data.h)
     glat.data = glat.data * ureg.degree
     glon.data = glon.data * ureg.degree
-    galt.data = galt.data * ureg.m
+    gh.data = gh.data * ureg.m
 
     # Create HCS for RX
-    rxcs = HCS.from_crs([glat, glon, galt])
+    rxcs = HCS.from_crs([glat, glon, gh])
 
     # Get path loss
     prop_loss = getattr(propagators, propagation.lower())(
@@ -459,8 +464,8 @@ def plot_transmit_pd(
 
     # This is the map projection we want to plot *onto*
     map_proj = ccrs.LambertConformal(
-        central_longitude=data.lon.mean(),
-        central_latitude=data.lat.mean(),
+        central_longitude=data.lon.data.mean(),
+        central_latitude=data.lat.data.mean(),
     )
 
     osm_img = cimgt.GoogleTiles(style="street")
@@ -1072,13 +1077,18 @@ def view_link_horizon(
     datarx = rx.request_data(theta=thslice, phi=0 * ureg.degree, hcs=rxcs)
     rdata_kwargs = {k: v for k, v in data_kwargs.items() if k in datarx.dims}
     datarx = datarx.isel(**rdata_kwargs)
-    copolrx = datarx.sel(polarization=["theta", "phi"])
-    copolrx = copolrx.assign_coords(polarization=["vertical", "horizontal"])
-
-    # Compute RX gain in terms of incident polarization
-    copolrx = abs((copolrx * incident_pol).sum(dim="polarization").squeeze())
     totrx = abs(datarx.sel(polarization="apolar").squeeze())
 
+    # Get copol gain for rx if polarization present default to apolar if not present
+    if set(["theta", "phi"]).issubset(set(datarx.polarization.values)):
+        copolrx = datarx.sel(polarization=["theta", "phi"])
+        copolrx = copolrx.assign_coords(polarization=["vertical", "horizontal"])
+
+        # Compute RX gain in terms of incident polarization
+        copolrx = abs((copolrx * incident_pol).sum(dim="polarization").squeeze())
+
+    else:
+        copolrx = totrx
     # Scaled gain for plotting
     gscale = (
         res.distance.item().magnitude * gsize / np.max((copolrx.max().item(), datatx.max().item()))

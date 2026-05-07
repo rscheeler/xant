@@ -6,6 +6,11 @@ Model valid from 20 MHz- 20GHz
 
 Module focused on point-to-point propagation.
 
+The original ITM algorithm is a work of the US federal government (NTIA/ITS)
+and is in the public domain under 17 U.S.C. § 105.
+This Python implementation is original work by Rob Scheeler and is
+licensed under the MIT License.
+
 References:
     https://its.ntia.gov/research-topics/radio-propagation-software/itm/itm.aspx
     https://github.com/NTIA/itm

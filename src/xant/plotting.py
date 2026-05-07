@@ -23,7 +23,7 @@ def plot_antenna_pattern(
     x: str,
     ax: plt.Axes | None = None,
     plot_type="line",
-    projection="polar",
+    projection: str | None = None,
     yspan: float = 40,
     ymax: float | None = None,
     quantity: str = "db",
@@ -61,6 +61,12 @@ def plot_antenna_pattern(
     """
     # Make data copy
     data = data.copy()
+
+    # Deal with projection
+    if x in _DEG_DIMS and projection is None:
+        projection = "polar"
+    elif projection is None:
+        projection = "rectilinear"
 
     # Make axis if none and format plot
     if ax is None:

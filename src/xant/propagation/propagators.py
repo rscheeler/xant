@@ -96,19 +96,21 @@ def mask_los(prop_loss: xr.DataArray, txcs: HCS, rxcs: HCS):
     https://en.wikipedia.org/wiki/Line-of-sight_propagation
     """
     # Get transmit height above ground by determining altitude of the ground
-    txlla = txcs.lla
-    gndlla = geocent2llh(
-        *llh2geocent(txlla[0], txlla[1], xr.zeros_like(txlla[2]), alt_above_ground=True),
+    txllh = txcs.llh
+    gndllh = geocent2llh.transform(
+        *llh2geocent.transform(txllh[0], txllh[1], xr.zeros_like(txllh[2])),
     )
-    htx = txlla[2] - gndlla[-1]
+
+    htx = txllh[2] - gndllh[-1] * ureg.m
     htx = xr.where(htx < 0, 0, htx)
 
     # Determine observation height above ground - note negative heights are masked
-    rxlla = rxcs.lla
-    gndlla = geocent2llh(
-        *llh2geocent(rxlla[0], rxlla[1], xr.zeros_like(rxlla[2]), alt_above_ground=True),
+    rxllh = rxcs.llh
+    gndllh = geocent2llh.transform(
+        *llh2geocent.transform(rxllh[0], rxllh[1], xr.zeros_like(rxllh[2])),
     )
-    ha = rxlla[-1] - gndlla[-1]
+
+    ha = rxllh[-1] - gndllh[-1] * ureg.m
     ha = xr.where(ha < 0, 0, ha)
 
     # Mask line of sight (assumption here is that the ground height of tx and rx is the same
@@ -162,7 +164,6 @@ def itm_rflink(
     **kwargs
     Any changes to the default parameters
     """
-    logger.debug("ITM PROP")
     # Defaults
     if "reliability" not in kwargs and "time" not in kwargs:
         kwargs["time"] = [50]
@@ -282,7 +283,7 @@ def itm_rflink(
 
     else:
         # Get mid point for selecting input data
-        lat_mid, lon_mid = geo_mid(txcs.lla[1], txcs.lla[0], rxcs.lla[1], rxcs.lla[0])
+        lat_mid, lon_mid = geo_mid(txcs.llh[1], txcs.llh[0], rxcs.llh[1], rxcs.llh[0])
 
         # Climate selection (1=equatorial,
         # 2=continental subtropical, 3=maritime subtropical,

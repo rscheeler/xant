@@ -1,8 +1,12 @@
-"""xant."""
+"""xant: Spatial antenna analysis with xarray."""
 
-__author__ = "Rob Scheeler"
-__email__ = ""
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("xant")
+except PackageNotFoundError:
+    # Package is not installed
+    __version__ = "0.0.0-dev"
 
 from xrench.units import ureg
 

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import h5py
 import pytest
 
 from xant import Antenna
@@ -23,7 +24,8 @@ if __name__ == "__main__":
     test = Antenna(_DIR / "testdata/demo4-testiron.xant")
     t0 = time.time()
     data = test.request_data(
-        theta=np.linspace(-180, 180, 361) * ureg.degree, phi=[0, 90] * ureg.degree
+        theta=np.linspace(-180, 180, 361) * ureg.degree,
+        phi=[0, 90] * ureg.degree,
     )
     print(f"Data in {time.time() - t0} seconds")
     # t0 = time.time()
