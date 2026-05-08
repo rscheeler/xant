@@ -1,8 +1,5 @@
 """Main module."""
 
-from time import time
-from typing import Optional, Union
-
 import cartopy.crs as ccrs
 import cartopy.io.img_tiles as cimgt
 import matplotlib
@@ -513,7 +510,7 @@ def plot_transmit_pd(
 
     if len(data.shape) > 2 and animate:
         # Initialize plot
-        p = data.isel({animate: 0}).plot(
+        data.isel({animate: 0}).plot(
             transform=ccrs.PlateCarree(),  # the data's projection
             subplot_kws={"projection": map_proj},  # the plot's projection
             alpha=0.75,
@@ -532,7 +529,7 @@ def plot_transmit_pd(
                 projection=osm_img.crs,
             )  # project using coordinate reference system (CRS) of street map
             # Plot DataArray
-            p = data.isel({animate: i}).plot(
+            data.isel({animate: i}).plot(
                 transform=ccrs.PlateCarree(),  # the data's projection
                 subplot_kws={"projection": map_proj},  # the plot's projection
                 alpha=0.75,
@@ -553,7 +550,7 @@ def plot_transmit_pd(
 
         return ani
     # Plot DataArray
-    p = data.plot(
+    data.plot(
         transform=ccrs.PlateCarree(),  # the data's projection
         subplot_kws={"projection": map_proj},  # the plot's projection
         alpha=0.75,
@@ -1127,7 +1124,6 @@ def view_link_horizon(
     )
     # Path Loss
     # intersection point
-    xi = xs[abs(yrx - ytx).argmin()]
     yi = ytx[abs(yrx - ytx).argmin()]
     # Limit intersection point if outside of plot bounds
     if yi > ax.get_ylim()[1]:

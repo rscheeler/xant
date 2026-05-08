@@ -845,8 +845,8 @@ def steer_phase_centers(
 
 
 def plot_grating_lobe_diagram(
-    dx: float,
-    dy: float,
+    dx: Quantity | float,
+    dy: Quantity | float,
     steering_angles: tuple,
     lattice_type: str = "rectangular",
     max_scan: Quantity = 60 * ureg.degree,
@@ -858,9 +858,9 @@ def plot_grating_lobe_diagram(
 
     Parameters
     ----------
-    dx : float
+    dx : Quantity or float
         x-spacing in wavelengths
-    dy : float
+    dy : Quantity or float
         y-spacing in wavelengths
     steering_angles_deg : tuple
         Tuple of steering angles (phi, theta) in degrees.
@@ -876,6 +876,12 @@ def plot_grating_lobe_diagram(
         Grating Lobe Suppression with Element Count Optimization in Planar Antenna Array,
         https://www.scirp.org/journal/paperinformation?paperid=54250
     """
+    # Accept plain floats as dimensionless wavelength units
+    if not isinstance(dx, Quantity):
+        dx = dx * ureg.dimensionless
+    if not isinstance(dy, Quantity):
+        dy = dy * ureg.dimensionless
+
     phi_steer, theta_steer = steering_angles
 
     u_steer = np.sin(theta_steer) * np.cos(phi_steer)

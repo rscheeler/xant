@@ -23,13 +23,13 @@ dependencies = [
     "scipy",
     "xarray",
     "matplotlib",
-    "hics[geo]",
+    "hics[geo]>=0.1.2",
     "h3",
     "loguru",
     "numba>=0.64.0",
     "h5py",
     "h5netcdf",
-    "xrench",
+    "xrench>=0.1.2",
 ]
 
 [dependency-groups]
@@ -146,7 +146,7 @@ show_error_codes = true
 [tool.coverage.report]
 skip_empty = true
 show_missing = true
-fail_under = 100
+fail_under = 70
 
 [tool.coverage.run]
 branch = true

@@ -18,7 +18,7 @@ from loguru import logger
 from scipy.ndimage import map_coordinates, spline_filter
 from scipy.spatial.transform import Rotation
 from xrench.units import ureg
-from xrench.xrutils import apply_rotation
+from xrench.xrutils import apply_rotation, kw2da
 
 from ..utils import conversions
 from ..utils.calc import fast_nearest_indices
@@ -311,11 +311,33 @@ class Antenna:
         for k, v in kwargs.items():
             if not isinstance(v, xr.DataArray):
                 if not isinstance(v, pint.Quantity):
-                    raise ValueError("Input must be specified as a pint.Quantity")
+                    # Check if this dimension exists in self.data.coords with known units
+                    if k in self.data.coords:
+                        coord = self.data.coords[k]
+                        if isinstance(coord.data, pint.Quantity):
+                            # Coord has units — check dimensionality matches
+                            expected_units = coord.data.units
+                            raise ValueError(
+                                f"Input '{k}' must be specified as a pint.Quantity "
+                                f"with dimensionality [{expected_units.dimensionality}]",
+                            )
+                        # Coord has no units — wrap as dimensionless
+                        v = np.atleast_1d(np.array(v)) * ureg.dimensionless
+                    else:
+                        # Unknown dim, not in coords — wrap as dimensionless
+                        v = np.atleast_1d(np.array(v)) * ureg.dimensionless
+                # Is a Quantity — check dimensionality matches coord if available
+                elif k in self.data.coords:
+                    coord = self.data.coords[k]
+                    if isinstance(coord.data, pint.Quantity):
+                        expected_dim = coord.data.dimensionality
+                        if not v.dimensionality == expected_dim:
+                            raise ValueError(
+                                f"Input '{k}' has wrong dimensionality. "
+                                f"Expected [{expected_dim}], got [{v.dimensionality}]",
+                            )
                 if np.array(v).shape == ():
-                    # Needs to have a dimension
                     v = np.array([v.magnitude]) * v.units
-                # Make xr.DataArray and assign to kwarg dict
                 kwargs[k] = xr.DataArray(v, coords={k: v.to_base_units()}, dims=(k,))
 
         # Set default coordinate frame
@@ -473,9 +495,13 @@ class Antenna:
 
             # Make sure values are in base units
             interp_dict = {}
+            unit_attrs = ("units", "unit")
             for k, v in gridcoords.items():
                 if isinstance(v.data, pint.Quantity):
                     v.data = v.data.to_base_units()
+                # Remove unit attributes
+                for attr in unit_attrs:
+                    v.attrs.pop(attr, None)
                 interp_dict[k] = v
             interp_dict = OrderedDict(interp_dict)
 
@@ -774,9 +800,7 @@ class ConcatFunction(AntennaFunction):
         super().__init__(dims, coords, self.antenna_func, coordinate_frame)
 
     def antenna_func(self, *args, **kwargs):
-        """
-        Function for returning antenna data
-        """
+        """Function for returning antenna data."""
         # Remove concatenated dim from kwargs if present
         if self.dim[0] in kwargs:
             concat_coord = kwargs.pop(self.dim[0])
@@ -809,8 +833,10 @@ class ConcatFunction(AntennaFunction):
 
 
 def concat(antennas, coord):
+    # Make sure coords are dataarrays
+    coorda = kw2da(**coord)
     # Create instance of OperatorFunction which stores self and other
-    func = ConcatFunction(antennas, coord)
+    func = ConcatFunction(antennas, coorda)
     # Create new antenna object with the operator function as the data input
     operated_ant = Antenna(func, antennas[0].hcs.reference)
 

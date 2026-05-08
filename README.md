@@ -289,7 +289,7 @@ ITM clutter methods: `ClutterMethods.NONE`, `ClutterMethods.ITURP1812`, `Clutter
 | `uvw` | `u`, `v`, `w` | Direction cosines |
 | `llh` | `lat`, `lon`, `h` | Geodetic — requires HCS |
 | `ecef` | `x`, `y`, `z` | Earth-centered — requires HCS |
-| `h3` | `i`, `j`, `h` | H3 hexagonal grid |
+| `h3` | `i`, `j`, `h` | H3 hexagonal grid — requires HCS |
 
 ### Concatenation
 
