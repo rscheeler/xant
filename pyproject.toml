@@ -1,7 +1,7 @@
 
 [project]
 name = "xant"
-version = "0.1.0"
+version = "0.1.1"
 description = "Spatial antenna analysis with xarray."
 authors = [{ name = "Rob Scheeler"}]
 readme = "README.md"
