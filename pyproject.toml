@@ -55,7 +55,7 @@ documentation = "https://rscheeler.github.io/xant"
 issues = "https://github.com/rscheeler/xant/issues"
 
 [build-system]
-requires = ["uv_build>=0.7.19,<0.8.0"]
+requires = ["uv-build"]
 build-backend = "uv_build"
 
 
