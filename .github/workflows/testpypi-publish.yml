@@ -1,9 +1,11 @@
-name: Publish to PyPI
+name: Publish to TestPyPI
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g. 1.2.3, no v prefix)'
+        required: true
 
 jobs:
   build-and-publish:
@@ -22,12 +24,11 @@ jobs:
         with:
           version: "0.6.12"
 
-      # 3. Inject the version from the Tag
+      # 3. Inject the version from input
       - name: Set Version
         run: |
-          CLEAN_VERSION=$(echo "${{ github.event.release.tag_name }}" | sed 's/^v//')
-          sed -i "s/^version = \".*\"/version = \"$CLEAN_VERSION\"/" pyproject.toml
-          echo "Building version $CLEAN_VERSION"
+          sed -i "s/^version = \".*\"/version = \"${{ github.event.inputs.version }}\"/" pyproject.toml
+          echo "Building version ${{ github.event.inputs.version }}"
 
       # 4. Build the wheel
       - name: Build package
@@ -35,4 +36,4 @@ jobs:
 
       # 5. Publish using Trusted Publishing
       - name: Publish package
-        run: uv publish
+        run: uv publish --publish-url https://test.pypi.org/legacy/
