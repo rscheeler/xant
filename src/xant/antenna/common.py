@@ -45,7 +45,7 @@ class Dipole(Antenna):
         )
         dims = ("polarization", "frequency", "phi", "theta")
         coords = dict(
-            polarization=["thetapol", "phipol"],
+            polarization=["theta", "phi"],
             frequency=frequency,
             phi=phi,
             theta=theta,
@@ -440,7 +440,7 @@ class RectangularAperture(Antenna):
         )
         dims = ("polarization", "frequency", "phi", "theta")
         coords = dict(
-            polarization=["thetapol", "phipol"],
+            polarization=["theta", "phi"],
             frequency=frequency,
             phi=phi,
             theta=theta,
@@ -552,7 +552,7 @@ class TE10Aperture(Antenna):
         )
         dims = ("polarization", "frequency", "phi", "theta")
         coords = dict(
-            polarization=["thetapol", "phipol"],
+            polarization=["theta", "phi"],
             frequency=frequency,
             phi=phi,
             theta=theta,
@@ -664,7 +664,7 @@ class CircularAperture(Antenna):
         )
         dims = ("polarization", "frequency", "phi", "theta")
         coords = dict(
-            polarization=["thetapol", "phipol"],
+            polarization=["theta", "phi"],
             frequency=frequency,
             phi=phi,
             theta=theta,

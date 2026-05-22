@@ -49,10 +49,10 @@ class Antenna:
             data = Path(data)
             if data.suffix == ".xant":
                 data = xr.open_dataarray(data, engine="h5netcdf")
-        self.data = data
 
         # Verify data
         self.validate(data)
+        self.data = data
 
         # Set cs
         if hcs is None:
@@ -540,7 +540,7 @@ class Antenna:
             for d in conversions.COORDINATE_DIMS[data.coordinate_frame]:
                 data = data.assign_coords({d: kwargs[d]})
         # Project all the polarizations
-        data = polarization.project_all_polarizations(data, convert_kwargs)
+        data = polarization.project_polarizations(data, convert_kwargs)
 
         # Some pint/xarray issues just force if not a quantity
         if not isinstance(data.data, pint.Quantity):
@@ -679,7 +679,9 @@ class AntennaFunction:
     ):
         # Collect dimensions and coordinates to emulate xarray.DataArray
         self.dims = dims
-        self.coords = coords
+        # Make sure they are data arrays
+        coorda = kw2da(**coords)
+        self.coords = coorda
 
         # Initialize attrs
         if attrs is None:

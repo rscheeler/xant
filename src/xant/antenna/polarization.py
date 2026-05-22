@@ -16,13 +16,15 @@ SUPPORTED_POLS = [
     ["x", "y", "z"],
     ["rhcp", "lhcp"],
     ["l3x", "l3y"],
+    ["az_azel", "el_azel"],
+    ["az_elaz", "el_elaz"],
     ["p45", "m45"],
 ]
 SUPPORTED_POLS_SET = [set(p) for p in SUPPORTED_POLS]
 
 
 def thetaphi2xyz(phi=None, theta=None):
-    """
+    r"""
     Generate Jones matrix to convert theta phi polarization in phitheta coordinate frame to cartesian
     x, y, z polarizations.
 
@@ -33,23 +35,108 @@ def thetaphi2xyz(phi=None, theta=None):
 
         E_z &= -E_{\\theta} \\sin\\theta
     """
+    phm, thm = xr.broadcast(phi, theta)
     A = np.array(
         [
-            [np.cos(theta) * np.cos(phi), xr.ones_like(theta) * (-np.sin(phi))],
-            [np.cos(theta) * np.sin(phi), xr.ones_like(theta) * np.cos(phi)],
-            [-np.sin(theta) * xr.ones_like(phi), xr.zeros_like(theta) * xr.zeros_like(phi)],
+            [np.cos(thm) * np.cos(phm), -np.sin(phm)],
+            [np.cos(thm) * np.sin(phm), np.cos(phm)],
+            [-np.sin(thm), xr.zeros_like(phm)],
         ],
     )
-    tmp = xr.zeros_like(theta) * xr.zeros_like(phi)
-    dims = ["new_polarization", "polarization"] + list(tmp.dims)
-    coords = {**dict(new_polarization=["x", "y", "z"], polarization=["theta", "phi"]), **tmp.coords}
+
+    dims = ["new_polarization", "polarization"] + list(phm.dims)
+    coords = {**dict(new_polarization=["x", "y", "z"], polarization=["theta", "phi"]), **phm.coords}
     A = xr.DataArray(A, dims=dims, coords=coords)
 
     return A
 
 
-def thetaphi2l3xl3y(phi=None, theta=None):
+def xyz2thetaphi(phi=None, theta=None):
+    r"""
+    Generate Jones matrix to convert theta phi polarization in phitheta coordinate frame to cartesian
+    x, y, z polarizations.
+
+    .. math::
+        E_{\\theta} &= E_x \\cos\\theta\\cos\\phi + E_y \\cos\\theta\\sin\\phi - E_z \\sin\\theta
+
+        E_{\\phi} &= -E_x \\sin\\phi + E_y \\cos\\phi
+
     """
+    phm, thm = xr.broadcast(phi, theta)
+    A = np.array(
+        [
+            [np.cos(thm) * np.cos(phm), np.cos(thm) * np.sin(phm), -np.sin(thm)],
+            [-np.sin(phm), np.cos(phm), xr.zeros_like(phm)],
+        ],
+    )
+
+    dims = ["new_polarization", "polarization"] + list(phm.dims)
+    coords = {**dict(new_polarization=["theta", "phi"], polarization=["x", "y", "z"]), **phm.coords}
+    return xr.DataArray(A, dims=dims, coords=coords)
+
+
+def thetaphi2az_azelel_azel(phi=None, theta=None):
+    r"""
+    Returns jones matrix to convert theta, phi polarization in phitheta coordinate frame to Ludwig's II definition
+    of co-pol aligned with azimuth-axis(az_azel) and cross-pol aligned with the elevation-axis (el_azel) in an
+    azimuth over elevation coordinate frame.
+
+    .. math::
+        E_{az} &= \\frac{1}{\\cos El}(E_{\\theta} \\cos\\phi - E_{\\phi} \\cos\\theta\\sin\\phi)
+
+        E_{el} &= \\frac{1}{\\cos El}(E_{\\theta} \\cos\theta\\sin\\phi + E_{\\phi} \\cos\\phi)
+
+        \\cos El = \\sqrt{1-\\sin^2\\theta\\sin^2\\phi}
+    """
+    phm, thm = xr.broadcast(phi, theta)
+    cosEl = np.sqrt(1 - np.sin(thm) ** 2 * np.sin(phm) ** 2)
+    scale = xr.where(cosEl == 0, 0, 1 / cosEl)
+    A = np.array(
+        [[np.cos(phm), -np.cos(thm) * np.sin(phm)], [np.cos(thm) * np.sin(phm), np.cos(phm)]],
+    )
+
+    dims = ["new_polarization", "polarization"] + list(phm.dims)
+    coords = {
+        **dict(new_polarization=["az_azel", "el_azel"], polarization=["theta", "phi"]),
+        **phm.coords,
+    }
+    A = xr.DataArray(A, dims=dims, coords=coords)
+    A *= scale
+    return A
+
+
+def thetaphi2az_elazel_elaz(phi=None, theta=None):
+    r"""
+    Returns jones matrix to convert theta, phi polarization in phitheta coordinate frame to Ludwig's II definition
+    of co-pol aligned with azimuth-axis(az_elaz) and cross-pol aligned with the elevation-axis (el_elaz) in an
+    elevation over azimuth coordinate frame.
+
+    .. math::
+        E_{az} &= \\frac{1}{\\cos \\alpha}(E_{\\theta} \\cos\\theta\\cos\\phi - E_{\\phi} \\sin\\phi)
+
+        E_{el} &= \\frac{1}{\\cos \\alpha}(E_{\\theta} \\sin\\phi + E_{\\phi} \\cos\\theta\\cos\\phi)
+
+        \\cos \\alpha = \\sqrt{1-\\sin^2\\theta\\cos^2\\phi}
+    """
+    phm, thm = xr.broadcast(phi, theta)
+    cosalpha = np.sqrt(1 - np.sin(thm) ** 2 * np.cos(phm) ** 2)
+    scale = xr.where(cosalpha == 0, 0, 1 / cosalpha)
+    A = np.array(
+        [[np.cos(thm) * np.cos(phm), -np.sin(phm)], [np.sin(phm), np.cos(thm) * np.cos(phm)]],
+    )
+
+    dims = ["new_polarization", "polarization"] + list(phm.dims)
+    coords = {
+        **dict(new_polarization=["az_elaz", "el_elaz"], polarization=["theta", "phi"]),
+        **phm.coords,
+    }
+    A = xr.DataArray(A, dims=dims, coords=coords)
+    A *= scale
+    return A
+
+
+def thetaphi2l3xl3y(phi=None, theta=None):
+    r"""
     Returns jones matrix to convert theta, phi polarization in phitheta coordinate frame to Ludwig's III definition
     of co-pol aligned with the x-axis (l3x) and cross-pol aligned with the y-axis (l3y).
 
@@ -72,7 +159,7 @@ def thetaphi2l3xl3y(phi=None, theta=None):
 
 
 def thetaphi2rhcplhcp(phi=None, theta=None):
-    """
+    r"""
     Returns Jones matrix to convert theta, phi polarization to circular RHCP and LHCP.
 
     .. math::
@@ -93,7 +180,7 @@ def thetaphi2rhcplhcp(phi=None, theta=None):
 
 
 def thetaphi2p45m45(phi=None, theta=None):
-    """
+    r"""
     Returns Jones matrix to convert theta, phi polarization to slant linear +/- 45.
 
     .. math::
@@ -116,17 +203,57 @@ def thetaphi2p45m45(phi=None, theta=None):
 polarization_transforms = [thetaphi2xyz, thetaphi2l3xl3y, thetaphi2rhcplhcp, thetaphi2p45m45]
 
 
-def project_all_polarizations(data, convert_kwargs: dict | None = None):
-    """
-    Takes data in and generates all the polarizations by projecting the input basis to other basis
-    """
+def tothetaphi(
+    data: xr.DataArray,
+    basis: str,
+    phi: xr.DataArray,
+    theta: xr.DataArray,
+) -> xr.DataArray:
+    """Convert data from basis polarization to theta/phi polarization."""
+    # 1. Find forward polarization transform (e.g., input: ['theta', 'phi'], new: ['x', 'y', 'z'])
+    basis2thetaphi = globals()[f"thetaphi2{basis}"]
+    A_forward = basis2thetaphi(phi=phi, theta=theta)
+
+    # 2. Compute pseudo-inverse. We use temporary dimension names for the output core
+    # so xarray doesn't accidentally bind the old coordinates to the new axis sizes.
+    A_inv = xr.apply_ufunc(
+        np.linalg.pinv,
+        A_forward,
+        input_core_dims=[["new_polarization", "polarization"]],
+        output_core_dims=[["target_pol", "source_pol"]],
+        vectorize=True,
+    )
+
+    # 3. Safely map the correct coordinate string arrays to our temporary dimensions
+    A_inv = A_inv.assign_coords(
+        {
+            "target_pol": A_forward.coords["polarization"].values,  # e.g., ['theta', 'phi']
+            "source_pol": A_forward.coords["new_polarization"].values,  # e.g., ['x', 'y', 'z']
+        },
+    )
+
+    # 4. Rename the temporary dimensions to match your data array for multiplication
+    A_inv = A_inv.rename({"source_pol": "polarization", "target_pol": "new_polarization"})
+
+    # 5. Project basis back to thetaphi
+    # This automatically matches up 'polarization' on both arrays regardless of where axis order is,
+    # sums it out, and renames the remaining 'new_polarization' back to 'polarization'
+    return (data * A_inv).sum(dim="polarization").rename(dict(new_polarization="polarization"))
+
+
+def project_polarizations(
+    data,
+    convert_kwargs: dict | None = None,
+    pol_converters: list[callable] = polarization_transforms,
+):
+    """Takes data in and generates all the polarizations by projecting the input basis to other basis."""
     # Only project if not apolar or if all polarizations are present
-    if data.polarization.shape != (1,) and set(data.polarization.values) != set(
-        [item for subl in SUPPORTED_POLS for item in subl],
-    ):
+    if data.polarization.shape != (1,) and set(data.polarization.values) != {
+        item for subl in SUPPORTED_POLS for item in subl
+    }:
         # Default convert kwargs
         if convert_kwargs is None:
-            convert_kwargs = dict()
+            convert_kwargs = {}
 
         # Store attrs
         attrs = data.attrs
@@ -143,20 +270,12 @@ def project_all_polarizations(data, convert_kwargs: dict | None = None):
         )
 
         # All transforms start from thetaphi and go to the new basis
-        # Just need to transpose the matrix to get thetaphi
         if basis != "thetaphi":
-            # Find polarization transform
-            basis2thetaphi = globals()[f"thetaphi2{basis}"]
-            A = basis2thetaphi(phi=phi, theta=theta)
-            # Transpose names
-            A = A.rename(dict(new_polarization="polarization", polarization="new_polarization"))
-            # Project basis to thetaphi
-            data = (data * A).sum(dim="polarization")
-            data = data.rename(dict(new_polarization="polarization"))
+            data = tothetaphi(data, basis, phi, theta)
 
         # Map thetaphi to all the polarizations by first building up the transform matrix A
         A = xr.concat(
-            [f(phi=phi, theta=theta) for f in polarization_transforms],
+            [f(phi=phi, theta=theta) for f in pol_converters],
             dim="new_polarization",
         )
 
@@ -211,16 +330,8 @@ def rotate_polarization(data, uvw_request, rprod):
         phi, theta = conversions.uvw2phitheta(*uvw_request)
 
         # All transforms start from thetaphi and go to the new basis
-        # Just need to transpose the matrix to get thetaphi
         if basis != "thetaphi":
-            # Find polarization transform
-            basis2thetaphi = globals()[f"thetaphi2{basis}"]
-            A = basis2thetaphi(phi=phi, theta=theta)
-            # Transpose names
-            A = A.rename(dict(new_polarization="polarization", polarization="new_polarization"))
-            # Project basis to thetaphi
-            data = (data * A).sum(dim="polarization")
-            data = data.rename(dict(new_polarization="polarization"))
+            data = tothetaphi(data, basis, phi, theta)
 
         # A in request domain and name the dimension
         A = thetaphi2xyz(phi=phi, theta=theta)
