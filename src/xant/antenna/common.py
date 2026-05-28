@@ -5,7 +5,7 @@ import xarray as xr
 from hics import HCS
 from pint import Quantity
 from scipy.spatial.transform import Rotation
-from scipy.special import jv
+from scipy.special import fresnel, jv
 from xrench.units import ureg
 
 from .core import Antenna, AntennaFunction
@@ -718,3 +718,170 @@ class CircularAperture(Antenna):
         etot *= adir / max_field
 
         return etot
+
+
+class PyramidalHorn(Antenna):
+    """
+    Pyramidal horn antenna pattern. The antenna pattern is derived from the formulas on pages 769-779 of
+    Antenna Theory by Balanis 3rd ed.
+    """
+
+    def __init__(
+        self,
+        a: Quantity,
+        b: Quantity,
+        a1: Quantity,
+        b1: Quantity,
+        p1: Quantity,
+        p2: Quantity,
+        frequency: Quantity,
+        hcs: HCS | None = None,
+    ):
+        # Set input properties
+        self.a = a
+        self.b = b
+        self.a1 = a1
+        self.b1 = b1
+        self.p1 = p1
+        self.p2 = p2
+
+        # Default Coordinates
+        frequency = xr.DataArray(
+            frequency,
+            dims=("frequency",),
+            coords=dict(frequency=frequency.to_base_units()),
+            attrs=dict(units=frequency.units),
+        )
+        theta = xr.DataArray(
+            np.linspace(0, 180, 181) * ureg.degree,
+            dims=("theta",),
+            coords=dict(theta=(np.linspace(0, 180, 181) * ureg.degree).to_base_units()),
+            attrs=dict(units=ureg.degree),
+        )
+        phi = xr.DataArray(
+            np.arange(-180, 180, 1) * ureg.degree,
+            dims=("phi",),
+            coords=dict(phi=(np.arange(-180, 180, 1) * ureg.degree).to_base_units()),
+            attrs=dict(units=ureg.degree),
+        )
+        dims = ("polarization", "frequency", "phi", "theta")
+        coords = dict(
+            polarization=["theta", "phi"],
+            frequency=frequency,
+            phi=phi,
+            theta=theta,
+        )
+        antenna_function = AntennaFunction(dims, coords, self._antenna_func, "phitheta")
+
+        super().__init__(antenna_function, hcs)
+
+    def _antenna_func(self, frequency=None, phi=None, theta=None, **kwargs):
+        """Radiation pattern of the pyramidal horn."""
+        # Determine propagation constant from wavelength
+        lam = 1 / frequency * ureg.speed_of_light
+        lam.data = lam.data.to("m")
+        k = (2 * np.pi * ureg.radians) / lam
+
+        # Intermediate equations
+        kxp = k * np.sin(theta) * np.cos(phi) + np.pi * ureg.radians / self.a1
+        kxpp = k * np.sin(theta) * np.cos(phi) - np.pi * ureg.radians / self.a1
+        t1p = np.sqrt(1 / (np.pi * ureg.radians * k * self.p2)) * (-k * self.a1 / 2 - kxp * self.p2)
+        t2p = np.sqrt(1 / (np.pi * ureg.radians * k * self.p2)) * (k * self.a1 / 2 - kxp * self.p2)
+        t1pp = np.sqrt(1 / (np.pi * ureg.radians * k * self.p2)) * (
+            -k * self.a1 / 2 - kxpp * self.p2
+        )
+        t2pp = np.sqrt(1 / (np.pi * ureg.radians * k * self.p2)) * (
+            k * self.a1 / 2 - kxpp * self.p2
+        )
+        t1p.data = t1p.data.to_base_units().magnitude
+        t2p.data = t2p.data.to_base_units().magnitude
+        t1pp.data = t1pp.data.to_base_units().magnitude
+        t2pp.data = t2pp.data.to_base_units().magnitude
+        St1p, Ct1p = fresnel(t1p)
+        St2p, Ct2p = fresnel(t2p)
+        St1pp, Ct1pp = fresnel(t1pp)
+        St2pp, Ct2pp = fresnel(t2pp)
+
+        I1 = (
+            0.5
+            * np.sqrt(np.pi * ureg.radians * self.p2 / k)
+            * (
+                np.exp(
+                    1j * kxp**2 * self.p2 / (2 * k),
+                )
+                * ((Ct2p - Ct1p) - 1j * (St2p - St1p))
+                + np.exp(1j * kxpp**2 * self.p2 / (2 * k))
+                * ((Ct2pp - Ct1pp) - 1j * (St2pp - St1pp))
+            )
+        )  # (13-46)
+
+        ky = k * np.sin(theta) * np.sin(phi)
+        t1 = np.sqrt(1 / (np.pi * ureg.radians * k * self.p1)) * (-k * self.b1 / 2 - ky * self.p1)
+        t2 = np.sqrt(1 / (np.pi * ureg.radians * k * self.p1)) * (k * self.b1 / 2 - ky * self.p1)
+        t1.data = t1.data.to_base_units().magnitude
+        t2.data = t2.data.to_base_units().magnitude
+        St1, Ct1 = fresnel(t1)
+        St2, Ct2 = fresnel(t2)
+
+        I2 = (
+            np.sqrt(np.pi * ureg.radians * self.p1 / k)
+            * np.exp(1j * ky**2 * self.p1 / (2 * k))
+            * ((Ct2 - Ct1) - 1j * (St2 - St1))
+        )  # (13-47)
+
+        # Ntheta = np.cos(theta) * np.sin(phi) * I1 * I2  # (13-45a)
+        # Nphi = -np.cos(phi) * I1 * I2  # (13-45b)
+        # Ltheta = np.cos(theta) * np.cos(phi) * I1 * I2  # (13-45c)
+        # Lphi = -np.sin(phi) * I1 * I2  # (13-45d)
+
+        etheta = (
+            1j
+            * k
+            / (4 * np.pi * ureg.radian)
+            * (1 / (1 * ureg.m))
+            * (np.sin(phi) * (np.cos(theta) + 1) * I1 * I2)
+        )  # (13-48b)
+        ephi = (
+            1j
+            * k
+            / (4 * np.pi * ureg.radian)
+            * (1 / (1 * ureg.m))
+            * (np.cos(phi) * (np.cos(theta) + 1) * I1 * I2)
+        )  # (13-48c)
+        etheta.data = etheta.data.to_base_units()
+        ephi.data = ephi.data.to_base_units()
+
+        # Add polarization coordinate
+        etheta = etheta.assign_coords({"polarization": "theta"})
+        ephi = ephi.assign_coords({"polarization": "phi"})
+
+        # Directivity Scale (13-50c), (13-51), (13-52)
+        scale = 8 * np.pi / (self.a1 * self.b1).to_base_units().magnitude
+
+        # Compute Dp
+        # u = np.sqrt(1 / (np.pi * ureg.radians * k * self.p2)) * (
+        #     -k * self.a1 / 2 + np.pi * ureg.radian * self.p2 / self.a1
+        # )
+        # v = np.sqrt(1 / (np.pi * ureg.radians * k * self.p2)) * (
+        #     k * self.a1 / 2 + np.pi * ureg.radian * self.p2 / self.a1
+        # )
+        # u.data = u.data.to_base_units().magnitude
+        # v.data = v.data.to_base_units().magnitude
+        # Su, Cu = fresnel(u)
+        # Sv, Cv = fresnel(v)
+
+        # dkern = self.b1 / np.sqrt(2 * lam * self.p1)
+        # dkern.data = dkern.data.to_base_units().magnitude
+        # Sdkern, Cdkern = fresnel(dkern)
+        # Dp = (
+        #     8
+        #     * np.pi
+        #     * self.p1
+        #     * self.p2
+        #     / (self.a1 * self.b1)
+        #     * ((Cu - Cv) ** 2 + (Su - Sv) ** 2)
+        #     * (Cdkern**2 + Sdkern**2)
+        # ) # Note: This directivity is lower than the integrated directivity computed from the far-field.
+
+        # Total pattern
+        return xr.concat((etheta, ephi), dim="polarization") * np.sqrt(scale)
