@@ -1,5 +1,7 @@
 """Helper utilities for data encountered in xant."""
 
+from typing import Literal
+
 import numpy as np
 import xarray as xr
 from loguru import logger
@@ -9,19 +11,35 @@ def remap_antenna_pattern(
     da: xr.DataArray,
     theta_dim: str = "theta",
     phi_dim: str = "phi",
+    units: Literal["degree", "radian"] = "degree",
 ) -> xr.DataArray:
     """
     Remaps antenna pattern data into canonical (theta, phi) space.
 
     Canonical space:
-        theta : [0, 180]
-        phi   : [-180, 180) ordered Q3, Q4, Q1, Q2
+        theta : [0, 180] degrees  or  [0, pi] radians
+        phi   : [-180, 180) degrees  or  [-pi, pi) radians,
+                ordered Q3, Q4, Q1, Q2
+
+    Parameters
+    ----------
+    units : Literal['degree', 'radian']
+        Either 'degree' (default) or 'radian'. Controls all internal constants
+        so the quadrant boundaries and wrap logic are always correct.
 
     Transformation logic:
     - Points at (+theta, phi) stay at (+theta, wrap(phi))
-    - Points at (-theta, phi) move to (+theta, wrap(phi + 180))
+    - Points at (-theta, phi) move to (+theta, wrap(phi + 180 degree / pi radian))
     - Standard [inclusive, exclusive) intervals handle boundary capture.
     """
+    if units not in ("degree", "radian"):
+        raise ValueError(f"units must be 'degree' or 'radian', got '{units}'")
+
+    # All internal constants scale with units — one source of truth
+    HALF = np.pi if units == "radian" else 180.0
+    FULL = 2 * HALF
+    QUAD = HALF / 2  # 90 degree or pi/2
+
     # Initial cleanup & sorting to guarantee monotonic source coordinates
     da = da.sortby([theta_dim, phi_dim])
     theta_src = da[theta_dim].values
@@ -38,29 +56,29 @@ def remap_antenna_pattern(
     # specs: Maps target quadrants to source coordinate ranges.
     # We use a consistent [lower, upper) approach for phi selection.
     specs = {
-        1: [  # Target: [0, 90)
-            {"t_range": (0, 180), "p_range": (0, 90)},
-            {"t_range": (0, 180), "p_range": (-360, -270)},
-            {"t_range": (-180, 0), "p_range": (-180, -90)},
-            {"t_range": (-180, 0), "p_range": (180, 270)},
+        1: [  # Target: [0, QUAD)
+            {"t_range": (0, HALF), "p_range": (0, QUAD)},
+            {"t_range": (0, HALF), "p_range": (-FULL, -3 * QUAD)},
+            {"t_range": (-HALF, 0), "p_range": (-HALF, -QUAD)},
+            {"t_range": (-HALF, 0), "p_range": (HALF, 3 * QUAD)},
         ],
-        2: [  # Target: [90, 180)
-            {"t_range": (0, 180), "p_range": (90, 180)},
-            {"t_range": (0, 180), "p_range": (-270, -180)},
-            {"t_range": (-180, 0), "p_range": (-90, 0)},
-            {"t_range": (-180, 0), "p_range": (270, 360)},
+        2: [  # Target: [QUAD, HALF)
+            {"t_range": (0, HALF), "p_range": (QUAD, HALF)},
+            {"t_range": (0, HALF), "p_range": (-3 * QUAD, -HALF)},
+            {"t_range": (-HALF, 0), "p_range": (-QUAD, 0)},
+            {"t_range": (-HALF, 0), "p_range": (3 * QUAD, FULL)},
         ],
-        3: [  # Target: [-180, -90)
-            {"t_range": (0, 180), "p_range": (-180, -90)},
-            {"t_range": (0, 180), "p_range": (180, 270)},
-            {"t_range": (-180, 0), "p_range": (0, 90)},
-            {"t_range": (-180, 0), "p_range": (-360, -270)},
+        3: [  # Target: [-HALF, -QUAD)
+            {"t_range": (0, HALF), "p_range": (-HALF, -QUAD)},
+            {"t_range": (0, HALF), "p_range": (HALF, 3 * QUAD)},
+            {"t_range": (-HALF, 0), "p_range": (0, QUAD)},
+            {"t_range": (-HALF, 0), "p_range": (-FULL, -3 * QUAD)},
         ],
-        4: [  # Target: [-90, 0)
-            {"t_range": (0, 180), "p_range": (-90, 0)},
-            {"t_range": (0, 180), "p_range": (270, 360)},
-            {"t_range": (-180, 0), "p_range": (90, 180)},
-            {"t_range": (-180, 0), "p_range": (-270, -180)},
+        4: [  # Target: [-QUAD, 0)
+            {"t_range": (0, HALF), "p_range": (-QUAD, 0)},
+            {"t_range": (0, HALF), "p_range": (3 * QUAD, FULL)},
+            {"t_range": (-HALF, 0), "p_range": (QUAD, HALF)},
+            {"t_range": (-HALF, 0), "p_range": (-3 * QUAD, -HALF)},
         ],
     }
 
@@ -77,12 +95,12 @@ def remap_antenna_pattern(
 
             # Define theta mask based on whether we should include 0.0 in that hemisphere
             if t_lo >= 0:
-                # Positive hemisphere: [0, 180]
+                # Positive hemisphere: [0, HALF]
                 if include_zero_in_positive:
                     t_mask = (theta_src >= t_lo - eps) & (theta_src <= t_hi + eps)
                 else:
                     t_mask = (theta_src > eps) & (theta_src <= t_hi + eps)
-            # Negative hemisphere: [-180, 0]
+            # Negative hemisphere: [-HALF, 0]
             elif include_zero_in_negative:
                 t_mask = (theta_src >= t_lo - eps) & (theta_src <= t_hi + eps)
             else:
@@ -93,15 +111,15 @@ def remap_antenna_pattern(
                 p_vals = block[phi_dim].values
 
                 if t_lo < 0:
-                    # Physical Rotation: (-theta, phi) -> (+theta, phi + 180)
+                    # Physical Rotation: (-theta, phi) -> (+theta, phi + HALF)
                     block = block.assign_coords({theta_dim: np.abs(block[theta_dim].values)})
                     block = block * -1.0  # Wipes out the 180-degree step phase change
-                    new_phi = p_vals + 180.0
+                    new_phi = p_vals + HALF
                 else:
                     new_phi = p_vals
 
-                # Wrap to canonical [-180, 180)
-                new_phi = (new_phi + 180.0) % 360.0 - 180.0
+                # Wrap to canonical [-HALF, HALF)
+                new_phi = (new_phi + HALF) % FULL - HALF
                 block = block.assign_coords({phi_dim: new_phi})
 
                 # Sort the block coordinates to prevent descending alignment issues on concat
@@ -110,7 +128,6 @@ def remap_antenna_pattern(
 
         if sub_blocks:
             # Combine fragments that landed in this quadrant
-            # We use drop_duplicates directly to resolve boundary duplicates gracefully
             q_combined = (
                 xr.concat(sub_blocks, dim=phi_dim)
                 .drop_duplicates(phi_dim, keep="first")
