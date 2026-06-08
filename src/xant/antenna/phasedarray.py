@@ -550,15 +550,17 @@ class TranslatedPhase(Antenna):
 
     def __init__(
         self,
-        frequency: Quantity,
+        frequency: Quantity | np.typing.ArrayLike,
         coordinate_systems: HCS | None = None,
     ) -> None:
         # Default Coordinates
+        if isinstance(frequency, Quantity):
+            frequency = frequency.to_base_units()
         frequency = xr.DataArray(
             frequency,
             dims=("frequency",),
-            coords=dict(frequency=frequency.to_base_units()),
-            attrs=dict(units=frequency.units),
+            coords=dict(frequency=frequency),
+            attrs=dict(units="Hz"),
         )
         theta = xr.DataArray(
             np.linspace(0, 180, 181) * ureg.degree,
