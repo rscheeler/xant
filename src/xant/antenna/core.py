@@ -188,7 +188,12 @@ class Antenna:
             # but we keep the result as an xarray object
             coeffs_raw = np.array(
                 [
-                    spline_filter(raw_vals[i, ...], mode=mode, order=order, **kwargs)
+                    spline_filter(
+                        raw_vals[i, ...],
+                        mode=mode,
+                        order=order,
+                        **kwargs,
+                    )
                     for i in range(raw_vals.shape[0])
                 ],
             )
@@ -201,7 +206,7 @@ class Antenna:
             )
         return self.__spline_filter
 
-    def _interp(self, order=3, **kwargs):
+    def _interp(self, order=3, mode="nearest", **kwargs):
         if isinstance(self.data, AntennaFunction):
             return self.data.antenna_callable(**kwargs)
 
@@ -219,7 +224,7 @@ class Antenna:
         req_dims = list(clean_kwargs.keys())
         tpos = list(set(self.data.dims) - set(req_dims)) + req_dims
         # Get filter coefficients and transpose
-        coeffs = self._spline_filter(order=order)
+        coeffs = self._spline_filter(order=order, mode=mode)
         coeffs = coeffs.transpose(*tpos).values
 
         idxs = []
@@ -268,7 +273,7 @@ class Antenna:
                     pixel_coords,
                     order=order,
                     prefilter=False,
-                    mode="nearest",
+                    mode=mode,
                 ).reshape(idxs[0].shape)
                 for i in range(coeffs.shape[0])
             ],

@@ -35,10 +35,19 @@ def remap_antenna_pattern(
     if units not in ("degree", "radian"):
         raise ValueError(f"units must be 'degree' or 'radian', got '{units}'")
 
+    # Convert to degrees for sampling
+    if units == "radian":
+        da = da.assign_coords(
+            {
+                theta_dim: np.round(np.degrees(da[theta_dim]), decimals=9),
+                phi_dim: np.round(np.degrees(da[phi_dim]), decimals=9),
+            },
+        )
+
     # All internal constants scale with units — one source of truth
-    HALF = np.pi if units == "radian" else 180.0
+    HALF = 180.0
     FULL = 2 * HALF
-    QUAD = HALF / 2  # 90 degree or pi/2
+    QUAD = HALF / 2  # 90 degree
 
     # Initial cleanup & sorting to guarantee monotonic source coordinates
     da = da.sortby([theta_dim, phi_dim])
@@ -163,6 +172,23 @@ def remap_antenna_pattern(
     # Concat the 90-degree strips into the final 360-degree longitudinal pattern
     result = xr.concat(snapped_strips, dim=phi_dim, join="outer")
     result = result.sortby([theta_dim, phi_dim])
+
+    # Include 4 points in negative theta so map_coordinates spline filter is accurate
+    # and negate as its in the negative space
+    resneg = result.isel({theta_dim: [1, 2, 3, 4]}) * -1
+    # Convert coordinates - negate theta
+    resneg = resneg.assign_coords(**{theta_dim: resneg.coords[theta_dim] * -1})
+    # Roll -> order goes from 3, 4, 1, 2 to 1, 2, 3, 4 in negative theta space
+    resneg = resneg.roll(phi=result.phi.size // 2)
+    # Concat and sort
+    result = xr.concat([resneg, result], dim=theta_dim, join="outer")
+    result = result.sortby([theta_dim, phi_dim])
+
+    # Convert back if needed
+    if units == "radian":
+        result = result.assign_coords(
+            {theta_dim: np.radians(result[theta_dim]), phi_dim: np.radians(result[phi_dim])},
+        )
 
     result.attrs.update(da.attrs)
     return result
