@@ -200,7 +200,14 @@ def thetaphi2p45m45(phi=None, theta=None):
     return A
 
 
-polarization_transforms = [thetaphi2xyz, thetaphi2l3xl3y, thetaphi2rhcplhcp, thetaphi2p45m45]
+polarization_transforms = [
+    thetaphi2xyz,
+    thetaphi2l3xl3y,
+    thetaphi2rhcplhcp,
+    thetaphi2p45m45,
+    thetaphi2az_azelel_azel,
+    thetaphi2az_elazel_elaz,
+]
 
 
 def tothetaphi(

@@ -11,7 +11,7 @@ def remap_antenna_pattern(
     da: xr.DataArray,
     theta_dim: str = "theta",
     phi_dim: str = "phi",
-    units: Literal["degree", "radian"] = "degree",
+    units: str = "degree",
 ) -> xr.DataArray:
     """
     Remaps antenna pattern data into canonical (theta, phi) space.
@@ -173,17 +173,6 @@ def remap_antenna_pattern(
     result = xr.concat(snapped_strips, dim=phi_dim, join="outer")
     result = result.sortby([theta_dim, phi_dim])
 
-    # Include 4 points in negative theta so map_coordinates spline filter is accurate
-    # and negate as its in the negative space
-    resneg = result.isel({theta_dim: [1, 2, 3, 4]}) * -1
-    # Convert coordinates - negate theta
-    resneg = resneg.assign_coords(**{theta_dim: resneg.coords[theta_dim] * -1})
-    # Roll -> order goes from 3, 4, 1, 2 to 1, 2, 3, 4 in negative theta space
-    resneg = resneg.roll(phi=result.phi.size // 2)
-    # Concat and sort
-    result = xr.concat([resneg, result], dim=theta_dim, join="outer")
-    result = result.sortby([theta_dim, phi_dim])
-
     # Convert back if needed
     if units == "radian":
         result = result.assign_coords(
@@ -191,4 +180,30 @@ def remap_antenna_pattern(
         )
 
     result.attrs.update(da.attrs)
+    # Now remapped, store attribute
+    result.attrs["remapped"] = True
+    return result
+
+
+def prepare_for_interpolation(
+    da: xr.DataArray,
+    theta_dim: str = "theta",
+    phi_dim: str = "phi",
+    negative_points: int = 4,
+) -> xr.DataArray:
+    """Prepare data for map_coordinate interpolation that will require 4 data points in negative theta.
+    Data must be complete in phi.
+    """
+    # Include negative_points points in negative theta so map_coordinates spline filter is accurate
+    # and negate the polarization as its in the negative space
+    da_neg_theta = da.isel({theta_dim: range(1, negative_points + 1)}) * -1
+    # Convert coordinates - negate theta
+    da_neg_theta = da_neg_theta.assign_coords(**{theta_dim: da_neg_theta.coords[theta_dim] * -1})
+    # Roll -> quadrant order goes from 3, 4, 1, 2 to 1, 2, 3, 4 in negative theta space
+    da_neg_theta = da_neg_theta.roll({phi_dim: da.coords[phi_dim].size // 2})
+    # Concat and sort
+    result = xr.concat([da_neg_theta, da], dim=theta_dim, join="outer")
+    result = result.sortby([theta_dim, phi_dim])
+    # Now interpolation ready, store attribute
+    result.attrs["interp_ready"] = True
     return result

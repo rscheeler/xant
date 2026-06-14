@@ -8,7 +8,6 @@ from collections.abc import Callable
 from copy import deepcopy
 from numbers import Number
 from pathlib import Path
-from typing import Optional, Union
 
 import numpy as np
 import pint
@@ -20,7 +19,7 @@ from scipy.spatial.transform import Rotation
 from xrench.units import ureg
 from xrench.xrutils import apply_rotation, kw2da
 
-from ..utils import conversions
+from ..utils import conversions, datautils
 from ..utils.calc import fast_nearest_indices
 from . import polarization
 
@@ -38,6 +37,7 @@ class Antenna:
     """
 
     REQUIRED_ATTRS = ["coordinate_frame"]
+    REQUIRED_COORDS = ["polarization", "frequency"]
 
     def __init__(
         self,
@@ -48,10 +48,14 @@ class Antenna:
         if isinstance(data, (str, Path)):
             data = Path(data)
             if data.suffix == ".xant":
-                data = xr.open_dataarray(data, engine="h5netcdf")
+                data: xr.DataArray = xr.open_dataarray(data, engine="h5netcdf")
+            else:
+                raise ValueError("File must be .xant format.")
 
-        # Verify data
+        # Verify and prepare data
         self.validate(data)
+        if isinstance(data, xr.DataArray):
+            data = self._prepare(data)
         self.data = data
 
         # Set cs
@@ -63,13 +67,62 @@ class Antenna:
         self.__spline_filter = None
 
     @staticmethod
-    def validate(data: xr.DataArray) -> None:
+    def validate(data: xr.DataArray | AntennaFunction) -> None:
         """Validation of the data structure."""
+        # Attribute and coordinate sets
+        data_attrs = set(data.attrs)
+        data_coords = set(data.coords)
         # Verify required attributes
-        if not set(Antenna.REQUIRED_ATTRS).issubset(list(data.attrs.keys())):
-            raise AttributeError(
+        if not set(Antenna.REQUIRED_ATTRS).issubset(data_attrs):
+            raise ValueError(
                 f"Required attributes not found in data. Be sure {', '.join(Antenna.REQUIRED_ATTRS)} is an attribute.",
             )
+        # Verify required coordinates
+        if not set(Antenna.REQUIRED_COORDS).issubset(data_coords):
+            raise ValueError(
+                f"Required coordinates not found in data. Be sure {', '.join(Antenna.REQUIRED_COORDS)} are coordinates.",
+            )
+        # Verify coordinate frame
+        if data.attrs["coordinate_frame"] not in conversions.COORDINATE_DIMS:
+            raise ValueError(
+                f"Coordinate frame {data.attrs['coordinate_frame']} not supported",
+            )
+        # Verify all coordinates defined for coordinate frame
+        if not set(conversions.COORDINATE_DIMS[data.attrs["coordinate_frame"]]).issubset(
+            data_coords,
+        ):
+            raise ValueError(
+                f"Coordinate frame {data.attrs['coordinate_frame']} requires {conversions.COORDINATE_DIMS[data.attrs['coordinate_frame']]} to be defined.",
+            )
+        # Verify polarization basis
+        input_pols = set(np.atleast_1d(data.coords["polarization"].values))
+        if input_pols not in polarization.SUPPORTED_POLS_SET:
+            raise ValueError(
+                f"Unsupported polarization combination: {input_pols}. "
+                f"Supported options are: {polarization.SUPPORTED_POLS}",
+            )
+
+    @staticmethod
+    def _prepare(data: xr.DataArray) -> xr.DataArray:
+        """Prepare data for interpolation."""
+        # Remap data to expected quadrants
+        # NOTE: This currently only is implemented for phitheta coordinate frame
+        if data.attrs["coordinate_frame"] == "phitheta":
+            # Attempt to figure out if angles are degrees or radians
+            if (
+                np.maximum(np.abs(data.theta.values).max(), np.abs(data.phi.values).max())
+                > 2 * np.pi + 0.01
+            ):
+                units = "degree"
+            else:
+                units = "radian"
+            if not data.attrs.get("remapped"):
+                data = datautils.remap_antenna_pattern(data, "theta", "phi", units)
+
+            if not data.attrs.get("interp_ready"):
+                data = datautils.prepare_for_interpolation(data, "theta", "phi", 4)
+
+        return data
 
     # Properties
     @property
