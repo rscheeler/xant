@@ -116,11 +116,7 @@ class Antenna:
                 units = "degree"
             else:
                 units = "radian"
-            if not data.attrs.get("remapped"):
-                data = datautils.remap_antenna_pattern(data, "theta", "phi", units)
-
-            if not data.attrs.get("interp_ready"):
-                data = datautils.prepare_for_interpolation(data, "theta", "phi", 4)
+            data = datautils.remap_antenna_pattern(data, "theta", "phi", units)
 
         return data
 
