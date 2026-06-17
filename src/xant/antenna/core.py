@@ -14,6 +14,7 @@ import pint
 import xarray as xr
 from hics import GLOBAL_CS, HCS
 from loguru import logger
+from scipy import constants
 from scipy.ndimage import map_coordinates, spline_filter
 from scipy.spatial.transform import Rotation
 from xrench.units import ureg
@@ -690,6 +691,87 @@ class Antenna:
         dat = u * np.sin(dat.theta) * dth * dph
         trp = dat.sum(dim=["theta", "phi"])
         return trp
+
+    def phase_center(
+        self,
+        theta_max_deg: float,
+        polarization: str,
+        hcs: HCS = None,
+        rcond: float = 1e-3,
+    ) -> xr.DataArray:
+        """
+        Determine the phase center offset of the antenna using the spherical phase method.
+
+        References:
+        ----------
+        W. Kunysz, "Antenna phase center effects and measurements in GNSS ranging applications,"
+        2010 14th International Symposium on Antenna Technology and Applied Electromagnetics &
+        the American Electromagnetics Conference, Ottawa, ON, Canada, 2010, pp. 1-4,
+        doi: 10.1109/ANTEM.2010.5552519.
+        """
+        # Get data
+        datac = self.request_data(
+            theta=np.linspace(0, theta_max_deg, 91) * ureg.degree,
+            phi=np.arange(-180, 180, 2) * ureg.degree,
+            hcs=hcs,
+        )
+        # Select polarization
+        data = datac.sel(polarization=polarization).squeeze()
+
+        # Get spatial points
+        theta = data.theta
+        phi = data.phi
+
+        # Get unwrapped phase
+        data.data = np.angle(data.data.magnitude)
+        # Unwrap theta
+        data = xr.apply_ufunc(
+            np.unwrap,
+            data,
+            input_core_dims=[["theta"]],
+            output_core_dims=[["theta"]],
+            kwargs={"axis": -1},  # axis=-1 because 'y' is the only core dim here
+            vectorize=True,
+        )
+        # Unwrap phi
+        data = xr.apply_ufunc(
+            np.unwrap,
+            data,
+            input_core_dims=[["phi"]],
+            output_core_dims=[["phi"]],
+            kwargs={"axis": -1},
+            vectorize=True,
+        )
+
+        lam = constants.speed_of_light / data.frequency
+        k0 = 2 * np.pi / lam
+        F = data / k0
+
+        # Sherical Phase
+        spx = np.sin(theta) * np.cos(phi)
+        spy = np.sin(theta) * np.sin(phi)
+        spz = np.cos(theta) * xr.ones_like(phi)
+        spc = xr.ones_like(spx)
+        M = xr.concat([spx, spy, spz, spc], dim=xr.Variable("position", ["x", "y", "z", "c"]))
+
+        # Stack spatial dimensions
+        M = M.stack(points=["theta", "phi"]).T
+        F = F.stack(points=["theta", "phi"]).T
+
+        # Solve
+        res = xr.apply_ufunc(
+            lambda a, b: np.linalg.lstsq(a, b, rcond=rcond)[0],
+            M,
+            F,
+            input_core_dims=[["points", "position"], ["points"]],
+            output_core_dims=[["position"]],
+            vectorize=True,
+            dask="parallelized",
+        )
+
+        # Apply units
+        res.data = res.data * ureg.m
+        return res
 
     def static_scene(self, llas, uns, uxs) -> xr.DataArray:
         return
