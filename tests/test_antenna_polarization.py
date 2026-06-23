@@ -151,7 +151,7 @@ class TestPolarizationRotation(unittest.TestCase):
     def test_simple(self):
         txzr = HCS(
             (0, 0, 0) * ureg.m,
-            rotation=Rotation.from_euler("ZYZ", [-90, -90, 0], degrees=True),
+            rotation=Rotation.from_euler("ZYZ", [90, -90, 0], degrees=True),
             reference=self.tower,
         )
         txcs = HCS(
@@ -165,11 +165,18 @@ class TestPolarizationRotation(unittest.TestCase):
         lam = (ureg.speed_of_light / fs).to("m")
         tx = TE10Aperture(lam[0] * 32, lam[0] * 8, fs, hcs=txcs)
 
-        tx_gain1 = tx.request_data(theta=0 * ureg.degree, phi=0 * ureg.degree)
-        tx_gain2 = tx.request_data(theta=0 * ureg.degree, phi=90 * ureg.degree, hcs=txzr)
-        tx_gain1 = tx_gain1.sel(polarization=["x", "y", "z"]).drop_vars("phi")
-        tx_gain2 = tx_gain2.sel(polarization=["x", "y", "z"]).drop_vars("phi")
+        txg1 = tx.request_data(theta=0 * ureg.degree, phi=0 * ureg.degree)
+        txg2 = tx.request_data(theta=0 * ureg.degree, phi=90 * ureg.degree, hcs=txzr)
+
+        tx_gain1 = txg1.sel(polarization=["theta", "phi"]).drop_vars("phi")
+        tx_gain2 = txg2.sel(polarization=["theta", "phi"]).drop_vars("phi")
+
         xr.testing.assert_allclose(tx_gain1, tx_gain2)
+
+        tx_gain1 = txg1.sel(polarization=["y"]).drop_vars("phi").drop_vars("polarization")
+        tx_gain2 = txg2.sel(polarization=["x"]).drop_vars("phi").drop_vars("polarization")
+
+        xr.testing.assert_allclose(tx_gain1, -1 * tx_gain2)
 
 
 if __name__ == "__main__":

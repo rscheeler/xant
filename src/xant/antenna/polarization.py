@@ -23,6 +23,13 @@ SUPPORTED_POLS = [
 SUPPORTED_POLS_SET = [set(p) for p in SUPPORTED_POLS]
 
 
+def getpolbasis(data: xr.DataArray) -> str:
+    """Determine polarization basis of data."""
+    return "".join(
+        SUPPORTED_POLS[SUPPORTED_POLS_SET.index(set(data.polarization.values))],
+    )
+
+
 def thetaphi2xyz(phi=None, theta=None):
     r"""
     Generate Jones matrix to convert theta phi polarization in phitheta coordinate frame to cartesian
@@ -266,15 +273,19 @@ def project_polarizations(
         attrs = data.attrs
 
         # Validate polarization basis
-        basis = "".join(SUPPORTED_POLS[SUPPORTED_POLS_SET.index(set(data.polarization.values))])
+        basis = getpolbasis(data)
 
         # Transform spatial data into phitheta coordinate frame as that is what is required
         angles = [data.coords[a] for a in conversions.COORDINATE_DIMS[data.coordinate_frame]]
         # Broadcast angles as this is necessary for some conversions
         angles = xr.broadcast(*angles)
-        phi, theta = uvw2phitheta(
-            *getattr(conversions, f"{data.coordinate_frame}2uvw")(*angles, **convert_kwargs),
-        )
+        # Only convert if needed
+        if data.coordinate_frame != "phitheta":
+            phi, theta = uvw2phitheta(
+                *getattr(conversions, f"{data.coordinate_frame}2uvw")(*angles, **convert_kwargs),
+            )
+        else:
+            phi, theta = angles
 
         # All transforms start from thetaphi and go to the new basis
         if basis != "thetaphi":
@@ -330,55 +341,69 @@ def rotate_polarization(data, uvw_request, rprod):
             data = data.sel(polarization=["theta", "phi"])
 
         # Validate polarization basis
-        basis = "".join(SUPPORTED_POLS[SUPPORTED_POLS_SET.index(set(data.polarization.values))])
+        basis = getpolbasis(data)
 
-        # Transform spatial data into phitheta coordinate frame as that is what is required
-        # This corresponds to theta and phi in the requested data's coordinate system
-        phi, theta = conversions.uvw2phitheta(*uvw_request)
+        if basis == "xyz":
+            # Since basis is x,y,z just rotate the identity matrix
+            A = xr.DataArray(
+                np.eye(3),
+                dims=["position", "polarization"],
+                coords=dict(position=["x", "y", "z"], polarization=["x", "y", "z"]),
+            )
 
-        # All transforms start from thetaphi and go to the new basis
-        if basis != "thetaphi":
-            data = tothetaphi(data, basis, phi, theta)
-
-        # A in request domain and name the dimension
-        A = thetaphi2xyz(phi=phi, theta=theta)
-        A = A.rename(dict(new_polarization="cart_polarization"))
-        A = A.rename(dict(polarization="new_polarization"))
-
-        # Get cartesian polarization transform
-        # Rotate uvw points
-        uvw_request_xr = []
-        for da, coord in zip(uvw_request, ["x", "y", "z"]):
-            da = da.assign_coords(dict(position=coord))
-            uvw_request_xr.append(da)
-        uvw_request_xr = xr.concat(uvw_request_xr, dim="position")
-        # Rotate uvw points
-        if isinstance(rprod, Rotation):
-            uvw_prime = apply_rotation(rprod, uvw_request_xr)
+            if isinstance(rprod, Rotation):
+                A = apply_rotation(rprod, A, rotation_dim="position", inverse=True)
+            else:
+                A = rprod.apply(A, inverse=True)
+            A = A.rename(dict(position="new_polarization"))
         else:
-            uvw_prime = rprod.apply(uvw_request_xr)
-        # # Format back to tuple
-        uvw = []
-        for coord in ["x", "y", "z"]:
-            da = uvw_prime.sel(position=coord)
-            da = da.drop_vars("position")
-            uvw.append(da)
+            # Transform spatial data into phitheta coordinate frame as that is what is required
+            # This corresponds to theta and phi in the requested data's coordinate system
+            phi, theta = conversions.uvw2phitheta(*uvw_request)
 
-        # Create xr.DataArrays with original uvws as dims/coords/attrs
-        phi_prime, theta_prime = conversions.uvw2phitheta(*uvw)
-        Aprime = thetaphi2xyz(phi=phi_prime, theta=theta_prime)
+            # All transforms start from thetaphi and go to the new basis
+            if basis != "thetaphi":
+                data = tothetaphi(data, basis, phi, theta)
 
-        # Rename dimensions for rotation
-        Aprime = Aprime.rename(dict(new_polarization="position"))
-        # Rotate
-        if isinstance(rprod, Rotation):
-            Aprime = apply_rotation(rprod, Aprime, rotation_dim="position", inverse=True)
-        else:
-            Aprime = rprod.apply(Aprime, inverse=True)
-        # Rename back for projection
-        Aprime = Aprime.rename(dict(position="cart_polarization"))
-        # Project the unit vectors onto the rotated unit vectors (Does the order matter?)
-        A = (A * Aprime).sum(dim="cart_polarization")
+            # A in request domain and name the dimension
+            A = thetaphi2xyz(phi=phi, theta=theta)
+            A = A.rename(dict(new_polarization="cart_polarization"))
+            A = A.rename(dict(polarization="new_polarization"))
+
+            # Get cartesian polarization transform
+            # Rotate uvw points
+            uvw_request_xr = []
+            for da, coord in zip(uvw_request, ["x", "y", "z"]):
+                da = da.assign_coords(dict(position=coord))
+                uvw_request_xr.append(da)
+            uvw_request_xr = xr.concat(uvw_request_xr, dim="position")
+            # Rotate uvw points
+            if isinstance(rprod, Rotation):
+                uvw_prime = apply_rotation(rprod, uvw_request_xr, inverse=False)
+            else:
+                uvw_prime = rprod.apply(uvw_request_xr, inverse=False)
+            # # Format back to tuple
+            uvw = []
+            for coord in ["x", "y", "z"]:
+                da = uvw_prime.sel(position=coord)
+                da = da.drop_vars("position")
+                uvw.append(da)
+
+            # Create xr.DataArrays with original uvws as dims/coords/attrs
+            phi_prime, theta_prime = conversions.uvw2phitheta(*uvw)
+            Aprime = thetaphi2xyz(phi=phi_prime, theta=theta_prime)
+
+            # Rename dimensions for rotation
+            Aprime = Aprime.rename(dict(new_polarization="position"))
+            # Rotate
+            if isinstance(rprod, Rotation):
+                Aprime = apply_rotation(rprod, Aprime, rotation_dim="position", inverse=True)
+            else:
+                Aprime = rprod.apply(Aprime, inverse=True)
+            # Rename back for projection
+            Aprime = Aprime.rename(dict(position="cart_polarization"))
+            # Project the unit vectors onto the rotated unit vectors (Does the order matter?)
+            A = (A * Aprime).sum(dim="cart_polarization")
         # Remap source polarization to the new polarization
         data = (data * A).sum(dim="polarization")
         data = data.rename(dict(new_polarization="polarization"))

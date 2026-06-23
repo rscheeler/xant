@@ -92,7 +92,7 @@ def uvw2phitheta(
     theta = np.arccos(np.clip(w, -1, 1))
 
     # Need to handle pint units
-    units = 1
+    units = 1.0
     if isinstance(phi.data, Quantity):
         units = phi.data.units
 

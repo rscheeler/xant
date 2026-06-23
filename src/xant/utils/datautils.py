@@ -31,6 +31,14 @@ def remap_antenna_pattern(
     - Points at (+theta, phi) stay at (+theta, wrap(phi))
     - Points at (-theta, phi) move to (+theta, wrap(phi + 180 degree / pi radian))
     - Standard [inclusive, exclusive) intervals handle boundary capture.
+
+    Notes:
+    -----
+    This function assumes data is in a rotation-invariant basis (e.g. x, y, z).
+    If your data is in a theta/phi basis, the (-theta, phi) -> (+theta, phi+180)
+    remapping requires a sign flip on the field components to account for the
+    180-degree phase discontinuity at the pole. Convert to cartesian first using
+    ``polarization.project_polarizations`` before calling this function.
     """
     if units not in ("degree", "radian"):
         raise ValueError(f"units must be 'degree' or 'radian', got '{units}'")
@@ -122,7 +130,6 @@ def remap_antenna_pattern(
                 if t_lo < 0:
                     # Physical Rotation: (-theta, phi) -> (+theta, phi + HALF)
                     block = block.assign_coords({theta_dim: np.abs(block[theta_dim].values)})
-                    block = block * -1.0  # Wipes out the 180-degree step phase change
                     new_phi = p_vals + HALF
                 else:
                     new_phi = p_vals
@@ -180,4 +187,36 @@ def remap_antenna_pattern(
         )
 
     result.attrs.update(da.attrs)
+    return result
+
+
+def pad_data(
+    da: xr.DataArray,
+    theta_dim: str = "theta",
+    phi_dim: str = "phi",
+    negative_points: int = 4,
+) -> xr.DataArray:
+    """Prepare data for map_coordinate interpolation by padding data with 4 data points in negative theta.
+    Data must be complete in phi.
+
+    Notes:
+    -----
+    This function assumes data is in a rotation-invariant basis (e.g. x, y, z).
+    If your data is in a theta/phi basis, the (-theta, phi) -> (+theta, phi+180)
+    remapping requires a sign flip on the field components to account for the
+    180-degree phase discontinuity at the pole. Convert to cartesian first using
+    ``polarization.project_polarizations`` before calling this function.
+    """
+    # Include negative_points points in negative theta so map_coordinates spline filter is accurate
+    # and negate the polarization as its in the negative space
+    da_neg_theta = da.isel({theta_dim: range(1, negative_points + 1)})
+    # Convert coordinates - negate theta
+    da_neg_theta = da_neg_theta.assign_coords(**{theta_dim: da_neg_theta.coords[theta_dim] * -1})
+    # Roll -> quadrant order goes from 3, 4, 1, 2 to 1, 2, 3, 4 in negative theta space
+    da_neg_theta = da_neg_theta.roll({phi_dim: da.coords[phi_dim].size // 2})
+    # Concat and sort
+    result = xr.concat([da_neg_theta, da], dim=theta_dim, join="outer")
+    result = result.sortby([theta_dim, phi_dim])
+    # Now interpolation ready, store attribute
+    result.attrs["interp_ready"] = True
     return result

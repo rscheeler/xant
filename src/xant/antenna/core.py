@@ -117,7 +117,19 @@ class Antenna:
                 units = "degree"
             else:
                 units = "radian"
+
+            # Determine data polarization basis
+            polbasis = polarization.getpolbasis(data)
+            # Use cartesian as the preferred basis convert if needed
+            if polbasis != "xyz":
+                data = polarization.project_polarizations(
+                    data,
+                    pol_converters=[polarization.thetaphi2xyz],
+                ).sel(polarization=["x", "y", "z"])
+            # Remap data to proper bounds
             data = datautils.remap_antenna_pattern(data, "theta", "phi", units)
+            # Pad data for interpolation
+            data = datautils.pad_data(data, "theta", "phi", 4)
 
         return data
 
@@ -175,7 +187,10 @@ class Antenna:
         # Can't multiply two patterns that are vector patterns
         if isinstance(other, Antenna):
             if (
-                not np.array_equal(np.array(self.data.coords["polarization"]), np.array(["apolar"]))
+                not np.array_equal(
+                    np.array(self.data.coords["polarization"]),
+                    np.array(["apolar"]),
+                )
                 and not np.array_equal(
                     np.array(other.data.coords["polarization"]),
                     np.array(["apolar"]),
@@ -393,7 +408,12 @@ class Antenna:
                             )
                 if np.array(v).shape == ():
                     v = np.array([v.magnitude]) * v.units
-                kwargs[k] = xr.DataArray(v, coords={k: v.to_base_units()}, dims=(k,))
+                v = v.astype(np.float64)
+                kwargs[k] = xr.DataArray(
+                    v,
+                    coords={k: v.to_base_units()},
+                    dims=(k,),
+                )
 
         # Set default coordinate frame
         if coordinate_frame is None:
@@ -579,9 +599,33 @@ class Antenna:
                     break
             data.attrs = {**data.attrs, **dict(coordinate_frame=cf)}
 
-        # Project the polarizations reduce data first
+        # Project the polarizations ensure in x,y,z first
+        basis = polarization.getpolbasis(data)
+        if basis != "xyz" and basis != "apolar":
+            # Transform spatial data into phitheta coordinate frame as that is what is required
+            angles = [data.coords[a] for a in conversions.COORDINATE_DIMS[data.coordinate_frame]]
+            # Broadcast angles as this is necessary for some conversions
+            # Only convert if needed
+            angles = xr.broadcast(*angles)
+            phi, theta = conversions.uvw2phitheta(
+                *getattr(conversions, f"{data.coordinate_frame}2uvw")(
+                    *angles,
+                    **convert_kwargs,
+                ),
+            )
+
+            if basis != "thetaphi":
+                data = polarization.tothetaphi(data, basis, phi, theta)
+
+            # Map thetaphi to all the polarizations by first building up the transform matrix A
+            A = xr.concat(
+                [f(phi=phi, theta=theta) for f in [polarization.thetaphi2xyz]],
+                dim="new_polarization",
+            )
+            data = (data * A).sum(dim="polarization")
+            data = data.rename(dict(new_polarization="polarization"))
         if data.polarization.size > 1:
-            data = data.sel(polarization=["theta", "phi"])
+            data = data.sel(polarization=["x", "y", "z"])
 
         # Add special kwargs to convert coordinate frame function - need to do this again as coordinate_frame
         # of data may differ
@@ -696,7 +740,7 @@ class Antenna:
         self,
         theta_max_deg: float,
         polarization: str,
-        hcs: HCS = None,
+        hcs: HCS | None = None,
         rcond: float = 1e-3,
     ) -> xr.DataArray:
         """
@@ -880,8 +924,11 @@ class OperatorFunction(AntennaFunction):
         selfdata = self.self_patt.request_data(*args, **kwargs)
 
         # Constrain data to a single basis
+        # Keep xyz basis — it's rotation-invariant and safe to add/multiply
+        # Selecting theta/phi here loses the polarization rotation already applied
+        # by each child's rotate_polarization call
         if selfdata.polarization.size > 1:
-            selfdata = selfdata.sel(polarization=["theta", "phi"])
+            selfdata = selfdata.sel(polarization=["x", "y", "z"])
 
         # Get other data depending on whether it is an Antenna or not
         if isinstance(self.other, Antenna):
@@ -889,7 +936,7 @@ class OperatorFunction(AntennaFunction):
 
             # Constrain data to a single basis
             if otherdata.polarization.size > 1:
-                otherdata = otherdata.sel(polarization=["theta", "phi"])
+                otherdata = otherdata.sel(polarization=["x", "y", "z"])
 
             # Drop polarization dimension if apolar and self is not apolar
             if otherdata.polarization.shape == (1,) and selfdata.polarization.shape != (1,):
