@@ -151,7 +151,7 @@ class TestPolarizationRotation(unittest.TestCase):
     def test_simple(self):
         txzr = HCS(
             (0, 0, 0) * ureg.m,
-            rotation=Rotation.from_euler("ZYZ", [90, -90, 0], degrees=True),
+            rotation=Rotation.from_euler("ZYZ", [0, -90, 90], degrees=True),
             reference=self.tower,
         )
         txcs = HCS(

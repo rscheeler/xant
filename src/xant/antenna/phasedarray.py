@@ -691,9 +691,9 @@ def get_position_in_base(
 
         # Rotate uvw points
         if isinstance(rprod, Rotation):
-            uvw_prime = apply_rotation(rprod, uvw_xr)
+            uvw_prime = apply_rotation(rprod, uvw_xr, inverse=True)
         else:
-            uvw_prime = rprod.apply(uvw_xr)
+            uvw_prime = rprod.apply(uvw_xr, inverse=True)
 
         # Format back to tuple
         uvw = []

@@ -352,9 +352,9 @@ def rotate_polarization(data, uvw_request, rprod):
             )
 
             if isinstance(rprod, Rotation):
-                A = apply_rotation(rprod, A, rotation_dim="position", inverse=True)
+                A = apply_rotation(rprod, A, rotation_dim="position", inverse=False)
             else:
-                A = rprod.apply(A, inverse=True)
+                A = rprod.apply(A, inverse=False)
             A = A.rename(dict(position="new_polarization"))
         else:
             # Transform spatial data into phitheta coordinate frame as that is what is required
@@ -379,9 +379,9 @@ def rotate_polarization(data, uvw_request, rprod):
             uvw_request_xr = xr.concat(uvw_request_xr, dim="position")
             # Rotate uvw points
             if isinstance(rprod, Rotation):
-                uvw_prime = apply_rotation(rprod, uvw_request_xr, inverse=False)
+                uvw_prime = apply_rotation(rprod, uvw_request_xr, inverse=True)
             else:
-                uvw_prime = rprod.apply(uvw_request_xr, inverse=False)
+                uvw_prime = rprod.apply(uvw_request_xr, inverse=True)
             # # Format back to tuple
             uvw = []
             for coord in ["x", "y", "z"]:
