@@ -171,12 +171,12 @@ class TestPolarizationRotation(unittest.TestCase):
         tx_gain1 = txg1.sel(polarization=["theta", "phi"]).drop_vars("phi")
         tx_gain2 = txg2.sel(polarization=["theta", "phi"]).drop_vars("phi")
 
-        xr.testing.assert_allclose(tx_gain1, tx_gain2)
+        xr.testing.assert_allclose(tx_gain1, -1 * tx_gain2)
 
         tx_gain1 = txg1.sel(polarization=["y"]).drop_vars("phi").drop_vars("polarization")
         tx_gain2 = txg2.sel(polarization=["x"]).drop_vars("phi").drop_vars("polarization")
 
-        xr.testing.assert_allclose(tx_gain1, -1 * tx_gain2)
+        xr.testing.assert_allclose(tx_gain1, tx_gain2)
 
 
 if __name__ == "__main__":

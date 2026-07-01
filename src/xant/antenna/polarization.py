@@ -350,12 +350,12 @@ def rotate_polarization(data, uvw_request, rprod):
                 dims=["position", "polarization"],
                 coords=dict(position=["x", "y", "z"], polarization=["x", "y", "z"]),
             )
-
+            # Rotate the Jones matrix from the self to the request (no inversion needed)
             if isinstance(rprod, Rotation):
                 A = apply_rotation(rprod, A, rotation_dim="position", inverse=False)
             else:
                 A = rprod.apply(A, inverse=False)
-            A = A.rename(dict(position="new_polarization"))
+            A = A.rename(position="new_polarization")
         else:
             # Transform spatial data into phitheta coordinate frame as that is what is required
             # This corresponds to theta and phi in the requested data's coordinate system
@@ -377,35 +377,37 @@ def rotate_polarization(data, uvw_request, rprod):
                 da = da.assign_coords(dict(position=coord))
                 uvw_request_xr.append(da)
             uvw_request_xr = xr.concat(uvw_request_xr, dim="position")
-            # Rotate uvw points
+            # Rotate request uvw points to determine uvw_prime - self data position - inversion needed
             if isinstance(rprod, Rotation):
                 uvw_prime = apply_rotation(rprod, uvw_request_xr, inverse=True)
             else:
                 uvw_prime = rprod.apply(uvw_request_xr, inverse=True)
-            # # Format back to tuple
+            # Format back to tuple
             uvw = []
             for coord in ["x", "y", "z"]:
                 da = uvw_prime.sel(position=coord)
                 da = da.drop_vars("position")
                 uvw.append(da)
 
+            # Get Jones matrix at the uvw_prime points (self data position) by mapping to theta phi since
+            # this is the self data basis
             # Create xr.DataArrays with original uvws as dims/coords/attrs
             phi_prime, theta_prime = conversions.uvw2phitheta(*uvw)
             Aprime = thetaphi2xyz(phi=phi_prime, theta=theta_prime)
 
             # Rename dimensions for rotation
-            Aprime = Aprime.rename(dict(new_polarization="position"))
-            # Rotate
+            Aprime = Aprime.rename(new_polarization="position")
+            # Rotate the Jones matrix from the self to the request (no inversion needed)
             if isinstance(rprod, Rotation):
-                Aprime = apply_rotation(rprod, Aprime, rotation_dim="position", inverse=True)
+                Aprime = apply_rotation(rprod, Aprime, rotation_dim="position", inverse=False)
             else:
-                Aprime = rprod.apply(Aprime, inverse=True)
+                Aprime = rprod.apply(Aprime, inverse=False)
             # Rename back for projection
-            Aprime = Aprime.rename(dict(position="cart_polarization"))
+            Aprime = Aprime.rename(position="cart_polarization")
             # Project the unit vectors onto the rotated unit vectors (Does the order matter?)
             A = (A * Aprime).sum(dim="cart_polarization")
         # Remap source polarization to the new polarization
         data = (data * A).sum(dim="polarization")
-        data = data.rename(dict(new_polarization="polarization"))
+        data = data.rename(new_polarization="polarization")
 
     return data
