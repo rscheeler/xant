@@ -5,7 +5,7 @@ import xarray as xr
 from hics import HCS
 from pint import Quantity
 from scipy.spatial.transform import Rotation
-from scipy.special import fresnel, jv
+from scipy.special import fresnel, jv, sici
 from xrench.units import ureg
 
 from .core import Antenna, AntennaFunction
@@ -51,19 +51,66 @@ class Dipole(Antenna):
             theta=theta,
         )
         antenna_function = AntennaFunction(dims, coords, self._antenna_func, "phitheta")
-
+        # Initialize directivity
+        self._dipole_d0 = self.get_dipole_d0(l, frequency)
         super().__init__(antenna_function, hcs)
 
+    @classmethod
+    def get_dipole_d0(cls, l, frequency) -> float:
+        """
+        Calculate the peak directivity using Balanis formula.
+
+        References:
+        ----------
+        C. A. Balanis, Antenna theory: analysis and design, 3. ed. Hoboken, N.J: Wiley-Interscience, 2005.
+        """
+        # kl
+        # Determine propagation constant from wavelength
+        lam = 1 / frequency * ureg.speed_of_light
+        lam.data = lam.data.to("m")
+        k = (2 * np.pi * ureg.radians) / lam
+        kL = k * l
+        kL.data = kL.data.to_base_units().magnitude
+
+        # Euler's Constant (often gamma, Balanis uses C)
+        C = 0.5772156649015328
+
+        # Compute Si and Ci values
+        Si_kL, Ci_kL = sici(kL)
+        Si_2kL, Ci_2kL = sici(2 * kL)
+
+        # Variable Q for computing directivity (4-75a)
+        Q = (
+            C
+            + np.log(kL)
+            - Ci_kL
+            + 0.5 * np.sin(kL) * (Si_2kL - 2 * Si_kL)
+            + 0.5 * np.cos(kL) * (C + np.log(kL / 2) + Ci_2kL - 2 * Ci_kL)
+        )
+        # Radiation intensity, F
+        theta = np.array([np.linspace(0.001, np.pi - 0.001, 1000)]).T
+        numerator = np.cos(np.outer(kL / 2, np.cos(theta))) - np.outer(
+            np.cos(kL / 2),
+            np.ones_like(theta),
+        )
+        denominator = np.outer(np.ones_like(kL), np.sin(theta))
+        F_theta = (numerator / denominator) ** 2
+
+        # Maximum radiation intensity, Fmax
+        F_max = np.max(F_theta, axis=-1)
+
+        # Calculate peak directivity D0
+
+        return (2.0 * F_max) / Q
+
     def _antenna_func(self, frequency=None, phi=None, theta=None, **kwargs):
-        """
-        Radiation pattern of the dipole.
-        """
+        """Radiation pattern of the dipole."""
         # Determine propagation constant from wavelength
         lam = 1 / frequency * ureg.speed_of_light
         lam.data = lam.data.to("m")
         k = (2 * np.pi * ureg.radians) / lam
 
-        # TODO: scale based on directivity
+        # Normalized Etheta
         etheta = (np.cos(k * self.l / 2 * np.cos(theta)) - np.cos(k * self.l / 2)) / np.sin(theta)
         etheta = etheta * xr.ones_like(phi)
 
@@ -79,6 +126,9 @@ class Dipole(Antenna):
 
         # Set nans to 0
         etot = etot.fillna(0)
+
+        # Scale by directivity
+        etot = etot * np.sqrt(self._dipole_d0)
 
         return etot
 
