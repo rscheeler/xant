@@ -7,6 +7,7 @@ import h3
 import numpy as np
 import xarray as xr
 from hics.geo.dem import llh2geocent
+from hics.geo.transforms import GEOD
 from pint import Quantity
 from xrench.units import ureg
 from xrench.xrutils import vector_norm
@@ -26,6 +27,7 @@ COORDINATE_DIMS = dict(
     cartesian=("x", "y", "z"),
     trueview=("tvx", "tvy"),
     h3=("i", "j", "h"),
+    rangeazimuth=("range", "azimuth", "h"),
 )
 
 COORDINATE_SYSTEMS = ["ecef", "llh"]
@@ -465,3 +467,58 @@ def h32uvw(
     u, v, w = llh2uvw(lat, lon, h, hagl, reference_cs)
 
     return u, v, w
+
+
+def _geod_fwd_wrapper(lons, lats, azs, rngs):
+    """Xarray wrapper for pyproj.Geod.fwd."""
+    # pyproj.Geod.fwd returns (lons, lats, back_azimuths)
+    lon_out, lat_out, _ = GEOD.fwd(lons, lats, azs, rngs, radians=True)
+    return lat_out, lon_out
+
+
+def rangeazimuth2latlon(range, azimuth, centerlat, centerlon) -> xr.DataArray:
+    """Convert range, azimuth for a center lat, lon to lat, lon."""
+    ra = range.copy()
+    if isinstance(ra.data, Quantity):
+        ra.data = ra.data.to_base_units().magnitude
+    az = azimuth.copy()
+    if isinstance(az.data, Quantity):
+        az.data = az.data.to_base_units().magnitude
+    latout, lonout = xr.apply_ufunc(
+        _geod_fwd_wrapper,
+        centerlon.to_base_units().magnitude,
+        centerlat.to_base_units().magnitude,
+        az,
+        ra,
+        input_core_dims=[
+            [],
+            [],
+            [],
+            [],
+        ],
+        output_core_dims=[[], []],
+        vectorize=True,
+        dask="parallelized",
+        output_dtypes=[float, float],
+    )
+
+    return latout, lonout
+
+
+def rangeazimuth2uvw(
+    range=None,
+    azimuth=None,
+    h=None,
+    centerlat=None,
+    centerlon=None,
+    hagl=False,
+    reference_cs=None,
+) -> xr.DataArray:
+    """Convert range, azimuth, and height to u,v,w by first finding lat,lon and then using llh2uvw."""
+    # Get lat/lon for range azimuths relative to center location
+    la, lo = rangeazimuth2latlon(range, azimuth, centerlat, centerlon)
+
+    lat = la.assign_coords(lat=la, lon=lo)
+    lon = lo.assign_coords(lat=la, lon=lo)
+
+    return llh2uvw(lat, lon, h, hagl=hagl, reference_cs=reference_cs)

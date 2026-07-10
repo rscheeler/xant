@@ -118,13 +118,17 @@ def plot_antenna_pattern(
     updated = dict()
     for k in data.coords.keys():
         if k in _DEG_DIMS:
-            updated[k] = (data.coords[k].data * ureg.radian).to("degree")
+            u = data.coords[k] * ureg.radian
+            u.data = u.data.to("degree").magnitude
+            updated[k] = u
     data = data.assign_coords(updated)
     updated = dict()
     # Revert for x-dimension if polar
     if projection == "polar":
         if x in _DEG_DIMS:
-            updated[x] = (data.coords[x].data * ureg.degree).to("radian")
+            u = data.coords[x] * ureg.degree
+            u.data = u.data.to("radian").magnitude
+            updated[x] = u
 
     data = data.assign_coords(updated)
 

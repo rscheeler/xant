@@ -406,8 +406,7 @@ class Antenna:
                                 f"Input '{k}' has wrong dimensionality. "
                                 f"Expected [{expected_dim}], got [{v.dimensionality}]",
                             )
-                if np.array(v).shape == ():
-                    v = np.array([v.magnitude]) * v.units
+                v = np.atleast_1d(np.array(v.magnitude)) * v.units
                 v = v.astype(np.float64)
                 kwargs[k] = xr.DataArray(
                     v,
@@ -526,7 +525,7 @@ class Antenna:
             requestangles = [gridcoords[list(kwargs.keys()).index(k)] for k in request_spatial_dims]
 
             # Add special kwargs to convert coordinate frame function
-            if coordinate_frame.lower() in ("llh", "ecef", "h3"):
+            if coordinate_frame.lower() in ("llh", "ecef", "h3", "rangeazimuth"):
                 ref_hcs = hcs
                 if ref_hcs is None:
                     ref_hcs = self.hcs
@@ -629,7 +628,7 @@ class Antenna:
 
         # Add special kwargs to convert coordinate frame function - need to do this again as coordinate_frame
         # of data may differ
-        if data.coordinate_frame.lower() in ("llh", "ecef", "h3"):
+        if data.coordinate_frame.lower() in ("llh", "ecef", "h3", "rangeazimuth"):
             ref_hcs = hcs
             if ref_hcs is None:
                 ref_hcs = self.hcs
