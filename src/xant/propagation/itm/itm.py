@@ -172,32 +172,32 @@ def validate(
     Perform input parameter validation.
     """
     if not 0.5 < htx < 3000.0:
-        raise ValueError("TX terminal height is out of range")
+        raise ValueError(f"TX terminal height is out of range: {htx}")
     if not 1.0 < htx < 1000.0:
-        warnings.warn("TX terminal height near limits")
+        warnings.warn(f"TX terminal height near limits: {htx}")
 
     if not 0.5 < hrx < 3000.0:
-        raise ValueError("RX terminal height is out of range")
+        raise ValueError(f"RX terminal height is out of range: {hrx}")
     if not 1.0 < hrx < 1000.0:
-        warnings.warn("RX terminal height near limits")
+        warnings.warn(f"RX terminal height near limits: {hrx}")
 
     if climate not in range(1, 8):
-        raise ValueError("Invalid value for radio climate")
+        raise ValueError(f"Invalid value for radio climate: {climate}")
 
     if not 250 < N0 < 400:
-        raise ValueError("Refractivity is out of range")
+        raise ValueError(f"Refractivity is out of range: {N0}")
 
     if not 20.0 < frequency < 20000.0:
-        raise ValueError("Frequency is out of range")
+        raise ValueError(f"Frequency is out of range: {frequency}")
 
     if pol not in range(2):
-        raise ValueError("Invalid value for polarization")
+        raise ValueError(f"Invalid value for polarization: {pol}")
 
     if epsilon < 1:
-        raise ValueError("Epsilon is out of range")
+        raise ValueError(f"Epsilon is out of range: {epsilon}")
 
     if sigma <= 0:
-        raise ValueError("Sigma is out of range")
+        raise ValueError(f"Sigma is out of range: {sigma}")
 
     if (
         (mdvar < 0)

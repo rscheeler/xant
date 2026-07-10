@@ -1,5 +1,7 @@
 """Main module."""
 
+from copy import deepcopy
+
 import cartopy.crs as ccrs
 import cartopy.io.img_tiles as cimgt
 import matplotlib
@@ -10,6 +12,7 @@ from cartopy.mpl.ticker import LatitudeFormatter, LongitudeFormatter
 from hics import HCS
 from hics.geo.geoutils import relative_azimuth
 from hics.plotting import view_surface_profile
+from loguru import logger
 from matplotlib import animation
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from pint import Quantity
@@ -86,11 +89,16 @@ def calculate_spatial_link(
     txrx : xr.DataArray
         Combine transmit and receive gain
     """
+    # Make sure frequency is a Quantity
+    f = deepcopy(tx.data.frequency)
+    if not isinstance(f.data, Quantity):
+        f = f * ureg.Hz
+
     # Get path loss first - because angles will be updated
     prop_loss = getattr(propagators, propagation.lower())(
         txcs=tx.hcs,
         rxcs=rx.hcs,
-        frequency=tx.data.frequency,
+        frequency=f,
         additional_loss=additional_loss,
         **kwargs,
     )
@@ -138,7 +146,11 @@ def calculate_spatial_link(
         # Convert nans to zeros
         utx = utx.fillna(0)
 
-        txhorizon = HCS((0, 0, 0) * ureg.m, rotation=Rotation.from_matrix(utx.T), reference=tx.hcs)
+        txhorizon = HCS(
+            (0, 0, 0) * ureg.m,
+            rotation=Rotation.from_matrix(utx.T).inv(),
+            reference=tx.hcs,
+        )
 
         rxhorizon = HCS(
             txhorizon.relative_position(rx.hcs),
@@ -188,8 +200,12 @@ def calculate_spatial_link(
     # Point the txhorizon and rxhorizon coordinate systems towards each other
     if tx_ha.shape == () and rel_azs[0].shape == ():
         tx_rots = Rotation.from_euler(
-            "XYX",
-            [-tx_ha.item().to("degree").magnitude, -rel_azs[0].item().to("degree").magnitude, 90],
+            "ZXZ",
+            [
+                -rel_azs[0].item().to("degree").magnitude,
+                -90 + tx_ha.item().to("degree").magnitude,
+                0,
+            ],
             degrees=True,
         )
         tx_rots = xr.DataArray(tx_rots, dims=tx_ha.dims, coords=tx_ha.coords)
@@ -202,8 +218,8 @@ def calculate_spatial_link(
     else:
         tx_rots = [
             Rotation.from_euler(
-                "XYX",
-                [-txa.to("degree").magnitude, -np.array([ra.to("degree").magnitude])[0], 90],
+                "ZXZ",
+                [np.array([-ra.to("degree").magnitude])[0], -90 + txa.to("degree").magnitude, 0],
                 degrees=True,
             )
             for txa, ra in zip(tx_ha.data, rel_azs[0].data, strict=False)
@@ -219,8 +235,12 @@ def calculate_spatial_link(
     txcs = HCS(tx_pos, rotation=tx_rots, reference=txhorizon)
     if rx_ha.shape == () and rel_azs[1].shape == ():
         rx_rots = Rotation.from_euler(
-            "XYX",
-            [-rx_ha.item().to("degree").magnitude, -rel_azs[1].item().to("degree").magnitude, 90],
+            "ZXZ",
+            [
+                -rel_azs[1].item().to("degree").magnitude,
+                -90 + rx_ha.item().to("degree").magnitude,
+                0,
+            ],
             degrees=True,
         )
         rx_rots = xr.DataArray(rx_rots, dims=rx_ha.dims, coords=rx_ha.coords)
@@ -233,8 +253,8 @@ def calculate_spatial_link(
     else:
         rx_rots = [
             Rotation.from_euler(
-                "XYX",
-                [-rxa.to("degree").magnitude, -np.array([ra.to("degree").magnitude])[0], 90],
+                "ZXZ",
+                [np.array([-ra.to("degree").magnitude])[0], -90 + rxa.to("degree").magnitude, 0],
                 degrees=True,
             )
             for rxa, ra in zip(rx_ha.data, rel_azs[1].data, strict=False)
@@ -251,17 +271,23 @@ def calculate_spatial_link(
     # Determine TX gain towards RX positions
     zrs = xr.zeros_like(rx_rots)
     zrs.data = np.zeros(zrs.shape) * ureg.degree
+    zrsth = zrs.copy()
+    zrsth = zrsth.expand_dims(theta=[0])
+    zrsphi = zrs.copy()
+    zrsphi = zrsphi.expand_dims(phi=[0])
     tx_gain = tx.request_data(
-        theta=zrs,
-        phi=zrs,
+        theta=zrsth,
+        phi=zrsphi,
+        frequency=f,
         coordinate_frame="phitheta",
         hcs=txcs,
     )
 
     # Determine TX gain towards RX positions
     rx_gain = rx.request_data(
-        theta=zrs,
-        phi=zrs,
+        theta=zrsth,
+        phi=zrsphi,
+        frequency=f,
         coordinate_frame="phitheta",
         hcs=rxcs,
     )
@@ -378,6 +404,7 @@ def transmit_power_density(
     hs: Quantity,
     propagation: str = "fspl",
     mask_los: bool = True,
+    hagl=False,
     convert_kwargs: dict | None = None,
     **kwargs,
 ) -> xr.DataArray:
@@ -407,6 +434,7 @@ def transmit_power_density(
     # Initialize
     if convert_kwargs is None:
         convert_kwargs = dict()
+    convert_kwargs = {**convert_kwargs, **dict(hagl=hagl)}
     # Get gain data: TODO - should the angles be compensated for ITM?
     data = tx.request_data(
         lat=lats,
@@ -431,7 +459,7 @@ def transmit_power_density(
     gh.data = gh.data * ureg.m
 
     # Create HCS for RX
-    rxcs = HCS.from_crs([glat, glon, gh])
+    rxcs = HCS.from_crs([glat, glon, gh], hagl=hagl)
 
     # Get path loss
     prop_loss = getattr(propagators, propagation.lower())(
@@ -619,8 +647,8 @@ def plot_link(
     else:
         fig = plt.gcf()
     if vminmax is None:
-        vmin = round2base(data.max().data) - vspan
-        vmax = round2base(data.max().data)
+        vmin = round2base(data.max().data.magnitude) - vspan
+        vmax = round2base(data.max().data.magnitude)
     else:
         vmin = vminmax[0]
         vmax = vminmax[1]
@@ -898,7 +926,6 @@ def view_link_horizon(
     ax = view_surface_profile(
         tx.hcs,
         rx.hcs,
-        aspect=aspect,
         ax=ax,
         lc=lc,
         lc_skip_ind=lc_skip_ind,
@@ -910,7 +937,7 @@ def view_link_horizon(
     prop_loss = prop_loss.isel(**{k: v for k, v in data_kwargs.items() if k in prop_loss.dims})
     incident_pol = incident_pol.isel(
         **{k: v for k, v in data_kwargs.items() if k in incident_pol.dims},
-    )
+    ).squeeze()
 
     # Store axes limit
     ylim = ax.get_ylim()
@@ -984,12 +1011,21 @@ def view_link_horizon(
     # Rotate coordinate systems
     txcs = HCS(
         (0, 0, 0) * ureg.m,
-        rotation=Rotation.from_euler("Z", azs[0].item().magnitude - 90, degrees=True),
+        rotation=Rotation.from_euler(
+            "Z",
+            90 - azs[0].item().magnitude,
+            degrees=True,
+        ),
         reference=txcs0,
     )
+
     rxcs = HCS(
         (0, 0, 0) * ureg.m,
-        rotation=Rotation.from_euler("Z", azs[1].item().magnitude - 90, degrees=True),
+        rotation=Rotation.from_euler(
+            "Z",
+            90 - azs[1].item().magnitude,
+            degrees=True,
+        ),
         reference=rxcs0,
     )
 
@@ -1015,7 +1051,16 @@ def view_link_horizon(
     # Get copol gain for rx if polarization present default to apolar if not present
     if set(["theta", "phi"]).issubset(set(datarx.polarization.values)):
         copolrx = datarx.sel(polarization=["theta", "phi"])
-        copolrx = copolrx.assign_coords(polarization=["vertical", "horizontal"])
+        pol_map = dict(theta="vertical", phi="horizontal")
+        copolrx = copolrx.sel(polarization=["theta", "phi"])
+        copolrx = copolrx.assign_coords(
+            dict(polarization=[pol_map[k] for k in copolrx.polarization.values]),
+        )
+        # Note that RX x-vector is opposite to TX so we need to convert, this should also mean that we don't need to
+        # conjugate
+        copolrx.loc[dict(polarization="horizontal")] = (
+            copolrx.loc[dict(polarization="horizontal")] * -1
+        )
 
         # Compute RX gain in terms of incident polarization
         copolrx = abs((copolrx * incident_pol).sum(dim="polarization").squeeze())
@@ -1029,11 +1074,11 @@ def view_link_horizon(
     rrx = copolrx * gscale
     rtrx = totrx * gscale
     rtx = datatx * gscale
-    yscale = 1
+    yscale = aspect
 
     # Make TX pattern
     gtx = rtx * np.sin(rtx.theta) + ax.get_lines()[lcidx + 2].get_xdata()
-    gty = rtx * np.cos(rtx.theta) * yscale + ax.get_lines()[lcidx + 2].get_ydata()
+    gty = rtx * np.cos(rtx.theta) / yscale + ax.get_lines()[lcidx + 2].get_ydata()
     ax.plot(gtx, gty, color="C0", lw=0.8, label="TX Gain")
     ax.fill(
         gtx,
@@ -1046,7 +1091,7 @@ def view_link_horizon(
 
     # Make Pattern Note that Rx points in negative x
     gtrx = rtrx * np.sin(-rtrx.theta) + ax.get_lines()[lcidx + 3].get_xdata()
-    gtry = rtrx * np.cos(-rtrx.theta) * yscale + ax.get_lines()[lcidx + 3].get_ydata()
+    gtry = rtrx * np.cos(-rtrx.theta) / yscale + ax.get_lines()[lcidx + 3].get_ydata()
     ax.plot(
         gtrx,
         gtry,
@@ -1065,7 +1110,7 @@ def view_link_horizon(
     )
 
     grx = -rrx * np.sin(rrx.theta) + ax.get_lines()[lcidx + 3].get_xdata()
-    gry = rrx * np.cos(rrx.theta) * yscale + ax.get_lines()[lcidx + 3].get_ydata()
+    gry = rrx * np.cos(rrx.theta) / yscale + ax.get_lines()[lcidx + 3].get_ydata()
     ax.plot(grx, gry, color="C0", lw=0.8, label="RX Co-Pol Gain")
     ax.fill(
         grx,
@@ -1154,5 +1199,5 @@ def view_link_horizon(
 
     # Add a Title
     ax.set_title("Link Detail")
-
+    ax.set_aspect(aspect)
     return ax
