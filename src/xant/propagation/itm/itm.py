@@ -653,9 +653,14 @@ def longley_rice(
         )
 
     else:
-        "troposcatter single horizon" if int(
-            delta__meter,
-        ) == 0 else "troposcatter double horizon"
+        propmode = (
+            "troposcatter single horizon"
+            if int(
+                delta__meter,
+            )
+            == 0
+            else "troposcatter double horizon"
+        )
 
     # Don't allow a negative loss
     A_ref__db = max(A_ref__db, 0.0)

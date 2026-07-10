@@ -889,6 +889,8 @@ def view_link_horizon(
     cs_kwargs: dict | None = None,
     data_kwargs: dict | None = None,
     ax: plt.Axes | None = None,
+    surf_r: float = 1 / 157e-9,
+    k_factor: float = 4 / 3.0,
 ) -> plt.Axes:
     """
     Creates line from transmitter and receiver and adds it to surface profile.
@@ -929,6 +931,8 @@ def view_link_horizon(
         ax=ax,
         lc=lc,
         lc_skip_ind=lc_skip_ind,
+        surf_r=surf_r,
+        k_factor=k_factor,
         **cs_kwargs,
     )
 
@@ -953,10 +957,20 @@ def view_link_horizon(
     lw = 0.8
     ax.plot(xs, ytx, ls="dashdot", lw=lw, color="k", label="TX Horizon")
 
+    # Need to rotate rx based on local horizon
+    # Calculate the tilt angle at the RX position (in radians)
+    # xra is the RX distance, xta is the TX distance (usually 0)
     # Y data for rx is -x * tan(tx_angle) + (h_rx + dist * tan(rx_angle))
     yra = ax.get_lines()[lcidx + 3].get_ydata().item()
     xra = ax.get_lines()[lcidx + 3].get_xdata().item()
-    yrx = -xs * np.tan(res.rx_angle.item()) + yra + xra * np.tan(res.rx_angle.item())
+    effective_radius = surf_r * k_factor
+    d = xra + xta
+    tilt_angle_rad = d / effective_radius
+
+    # 2. Adjust the RX elevation angle to account for the Earth's tilt
+    # The ray pointing back toward TX is tilted upward relative to the TX flat horizontal
+    rx_angle_global = res.rx_angle.item() + tilt_angle_rad
+    yrx = -xs * np.tan(rx_angle_global) + yra + xra * np.tan(rx_angle_global)
     # Plot rx horizon line
     ax.plot(xs, yrx, ls="dashdot", lw=lw, color="k", label="RX Horizon")
 
@@ -1090,8 +1104,12 @@ def view_link_horizon(
     )
 
     # Make Pattern Note that Rx points in negative x
-    gtrx = rtrx * np.sin(-rtrx.theta) + ax.get_lines()[lcidx + 3].get_xdata()
-    gtry = rtrx * np.cos(-rtrx.theta) / yscale + ax.get_lines()[lcidx + 3].get_ydata()
+    # Modify theta based on local RX horizon angle to account for local horizon
+    gtrx = rtrx * np.sin(-rtrx.theta + rx_angle_global) + ax.get_lines()[lcidx + 3].get_xdata()
+    gtry = (
+        rtrx * np.cos(-rtrx.theta + rx_angle_global) / yscale
+        + ax.get_lines()[lcidx + 3].get_ydata()
+    )
     ax.plot(
         gtrx,
         gtry,
@@ -1109,8 +1127,10 @@ def view_link_horizon(
         linewidth=0.8,
     )
 
-    grx = -rrx * np.sin(rrx.theta) + ax.get_lines()[lcidx + 3].get_xdata()
-    gry = rrx * np.cos(rrx.theta) / yscale + ax.get_lines()[lcidx + 3].get_ydata()
+    grx = rrx * np.sin(-rrx.theta + rx_angle_global) + ax.get_lines()[lcidx + 3].get_xdata()
+    gry = (
+        rrx * np.cos(-rrx.theta + rx_angle_global) / yscale + ax.get_lines()[lcidx + 3].get_ydata()
+    )
     ax.plot(grx, gry, color="C0", lw=0.8, label="RX Co-Pol Gain")
     ax.fill(
         grx,
