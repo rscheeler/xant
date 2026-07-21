@@ -27,7 +27,7 @@ COORDINATE_DIMS = dict(
     cartesian=("x", "y", "z"),
     trueview=("tvx", "tvy"),
     h3=("i", "j", "h"),
-    rangeazimuth=("range", "azimuth", "h"),
+    distanceazimuth=("distance", "azimuth", "h"),
 )
 
 COORDINATE_SYSTEMS = ["ecef", "llh"]
@@ -476,9 +476,9 @@ def _geod_fwd_wrapper(lons, lats, azs, rngs):
     return lat_out, lon_out
 
 
-def rangeazimuth2latlon(range, azimuth, centerlat, centerlon) -> xr.DataArray:
-    """Convert range, azimuth for a center lat, lon to lat, lon."""
-    ra = range.copy()
+def distanceazimuth2latlon(distance, azimuth, centerlat, centerlon) -> xr.DataArray:
+    """Convert distance, azimuth for a center lat, lon to lat, lon."""
+    ra = distance.copy()
     if isinstance(ra.data, Quantity):
         ra.data = ra.data.to_base_units().magnitude
     az = azimuth.copy()
@@ -505,8 +505,8 @@ def rangeazimuth2latlon(range, azimuth, centerlat, centerlon) -> xr.DataArray:
     return latout, lonout
 
 
-def rangeazimuth2uvw(
-    range=None,
+def distanceazimuth2uvw(
+    distance=None,
     azimuth=None,
     h=None,
     centerlat=None,
@@ -516,7 +516,7 @@ def rangeazimuth2uvw(
 ) -> xr.DataArray:
     """Convert range, azimuth, and height to u,v,w by first finding lat,lon and then using llh2uvw."""
     # Get lat/lon for range azimuths relative to center location
-    la, lo = rangeazimuth2latlon(range, azimuth, centerlat, centerlon)
+    la, lo = distanceazimuth2latlon(distance, azimuth, centerlat, centerlon)
 
     lat = la.assign_coords(lat=la, lon=lo)
     lon = lo.assign_coords(lat=la, lon=lo)

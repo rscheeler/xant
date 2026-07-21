@@ -524,7 +524,7 @@ class Antenna:
             requestangles = [gridcoords[list(kwargs.keys()).index(k)] for k in request_spatial_dims]
 
             # Add special kwargs to convert coordinate frame function
-            if coordinate_frame.lower() in ("llh", "ecef", "h3", "rangeazimuth"):
+            if coordinate_frame.lower() in ("llh", "ecef", "h3", "distanceazimuth"):
                 ref_hcs = hcs
                 if ref_hcs is None:
                     ref_hcs = self.hcs
@@ -626,7 +626,7 @@ class Antenna:
 
         # Add special kwargs to convert coordinate frame function - need to do this again as coordinate_frame
         # of data may differ
-        if data.coordinate_frame.lower() in ("llh", "ecef", "h3", "rangeazimuth"):
+        if data.coordinate_frame.lower() in ("llh", "ecef", "h3", "distanceazimuth"):
             ref_hcs = hcs
             if ref_hcs is None:
                 ref_hcs = self.hcs
