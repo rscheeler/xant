@@ -67,12 +67,11 @@ class AntennaArray:
         )
         # Check to see if elements need to be broadcasted
         rot_bools = []
-        iden_rot = np.eye(3)
+        iden_rot = Rotation.identity().as_quat()
         for x in [cs.rotation for cs in coordinate_systems]:
-            if isinstance(x, Rotation):
-                rot_bools.append(np.allclose(x.as_matrix(), iden_rot))
-            elif isinstance(x, xr.DataArray):
-                rot_bools.append(all(np.allclose(xi.as_matrix(), iden_rot) for xi in x))
+            rot_bools.append(
+                all(np.atleast_1d((x.basemag == iden_rot).all(dim="quaternion"))),
+            )
         if not all(rot_bools):
             # Broadcast element based on rotation and remove rotation from element coordinate systems
             elements = []
@@ -690,10 +689,7 @@ def get_position_in_base(
         uvw_xr = xr.concat(uvw_xr, dim="position")
 
         # Rotate uvw points
-        if isinstance(rprod, Rotation):
-            uvw_prime = apply_rotation(rprod, uvw_xr, inverse=True)
-        else:
-            uvw_prime = rprod.apply(uvw_xr, inverse=True)
+        uvw_prime = rprod.apply(uvw_xr, inverse=True)
 
         # Format back to tuple
         uvw = []

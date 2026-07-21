@@ -441,10 +441,9 @@ class Antenna:
 
             # Check to see if rotation and data dims intersect
             rdims = OrderedDict()
-            if isinstance(rprod, xr.DataArray):
-                intersect_dims = list(set(rprod.dims) & set(self.data.dims))
-                for d in intersect_dims:
-                    rdims[d] = rprod.coords[d]
+            intersect_dims = list(set(rprod.basemag.dims) - {"quaternion"})
+            for d in intersect_dims:
+                rdims[d] = rprod.coords[d]
 
             # Shared keys in rdims and kwargs
             # TODO: see if this can be simplified with xr.align
@@ -544,10 +543,7 @@ class Antenna:
             uvw_xr = xr.concat(uvw_xr, dim="position")
 
             # Rotate uvw points
-            if isinstance(rprod, Rotation):
-                uvw_prime = apply_rotation(rprod, uvw_xr, inverse=True)
-            else:
-                uvw_prime = rprod.apply(uvw_xr, inverse=True)
+            uvw_prime = rprod.apply(uvw_xr, inverse=True)
 
             # Format back to tuple
             uvw = []
@@ -592,13 +588,15 @@ class Antenna:
             # If kwargs have already been processed coordinate frame is not correct so grab from coord keys
             # TODO: This is going to be an issue with azel/elaz
             cf = coordinate_frame
-            for k, v in conversions.COORDINATE_DIMS.items():
-                if set(v).issubset(list(data.coords.keys())):
-                    cf = k
-                    break
+            # for k, v in conversions.COORDINATE_DIMS.items():
+            #     if set(v).issubset(list(data.coords.keys())):
+            #         cf = k
+            #         break
             data.attrs = {**data.attrs, **dict(coordinate_frame=cf)}
 
         # Project the polarizations ensure in x,y,z first
+        if all(p in data.polarization for p in ["x", "y", "z"]):
+            data = data.sel(polarization=["x", "y", "z"])
         basis = polarization.getpolbasis(data)
         if basis != "xyz" and basis != "apolar":
             # Transform spatial data into phitheta coordinate frame as that is what is required

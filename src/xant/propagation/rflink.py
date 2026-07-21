@@ -364,36 +364,48 @@ def calculate_spatial_link(
                 total_prop = total_prop.assign_coords(ref=reftot)
         prop_loss = prop_loss.drop_vars("ipol")
         prop_loss = xr.concat([prop_loss, total_prop], "polarization")
-
+    logger.debug(f"Prop loss: {prop_loss}")
     # Only return apolar magnitudes
     if tx_gain.polarization.size == 2:
         tx_gain = vector_norm(tx_gain, "polarization")
         tx_gain.data = (np.abs(tx_gain.data) ** 2) * ureg.dimensionless
+    else:
+        tx_gain = tx_gain.squeeze().drop_vars("polarization")
     if rx_gain.polarization.size == 2:
         rx_gain = rx_gain.sum(dim="polarization")
         rx_gain.data = (np.abs(rx_gain.data) ** 2) * ureg.dimensionless
+    else:
+        rx_gain = rx_gain.squeeze().drop_vars("polarization")
     if tx_pl_rx.polarization.size == 2:
         tx_pl_rx = tx_pl_rx.sum(dim="polarization")
-
+    else:
+        tx_pl_rx = tx_pl_rx.squeeze().drop_vars("polarization")
     # Determine received power by multiplying power by the tx-path loss-rx product and convert to dBm
     rx_power = power.to("watt") * abs(tx_pl_rx) ** 2
-    rx_power.data = rx_power.data.to("dBm")
 
+    rx_power.data = rx_power.data.to("dBm")
+    logger.debug(f"RX power {rx_power}")
     # Add gains as coords
-    rx_power = rx_power.assign_coords(tx_power=power, tx_gain=tx_gain, rx_gain=rx_gain)
 
     # Attributes that xarray uses for plotting (long_name and units)
     attrs = dict(long_name="Power", units="dBm", description="Received Power")
-
-    # Add attrs
-    rx_power.attrs = {**rx_power.attrs, **attrs}
-
+    rx_power.attrs = {**rx_power.attrs, **attrs, **kwargs}
+    # Merge into dataset
+    res = xr.merge(
+        [
+            rx_power.rename("rx_power"),
+            tx_gain.rename("tx_gain"),
+            rx_gain.rename("rx_gain"),
+            prop_loss.rename("prop_loss"),
+            incident_pol.rename("incident_pol"),
+        ],
+        join="outer",
+    )
+    res = res.assign_coords(tx_power=power)
     # Squeeze singleton dimensions
-    rx_power = rx_power.squeeze()
+    res = res.squeeze()
 
-    prop_loss.attrs = {**prop_loss.attrs, **kwargs}
-
-    return rx_power, prop_loss, incident_pol, txcs, rxcs
+    return res, txcs, rxcs
 
 
 def transmit_power_density(
@@ -879,8 +891,6 @@ def view_link_horizon(
     tx,
     rx,
     res,
-    incident_pol,
-    prop_loss,
     aspect: float = 1.0,
     limit_scale: float = 1.0,
     bbox_props: dict | None = None,
@@ -916,9 +926,9 @@ def view_link_horizon(
     if ax is None:
         fig, ax = plt.subplots()
         fig.set_figwidth(fig.get_figwidth() * 2)
-    if "clutter_method" in prop_loss.attrs.keys():
-        if "clutter_kwargs" in prop_loss.attrs.keys():
-            lc_skip_ind = prop_loss.attrs["clutter_kwargs"].get("lc_skip_ind", None)
+    if "clutter_method" in res.attrs.keys():
+        if "clutter_kwargs" in res.attrs.keys():
+            lc_skip_ind = res.attrs["clutter_kwargs"].get("lc_skip_ind", None)
             lc = True
             lcidx = 0
     else:
@@ -937,11 +947,11 @@ def view_link_horizon(
     )
 
     # Slice
-    res = res.isel(**{k: v for k, v in data_kwargs.items() if k in res.dims})
-    prop_loss = prop_loss.isel(**{k: v for k, v in data_kwargs.items() if k in prop_loss.dims})
-    incident_pol = incident_pol.isel(
-        **{k: v for k, v in data_kwargs.items() if k in incident_pol.dims},
-    ).squeeze()
+    res = res.sel(**{k: v for k, v in data_kwargs.items() if k in res.dims})
+    # prop_loss = prop_loss.isel(**{k: v for k, v in data_kwargs.items() if k in prop_loss.dims})
+    # incident_pol = incident_pol.isel(
+    #     **{k: v for k, v in data_kwargs.items() if k in incident_pol.dims},
+    # ).squeeze()
 
     # Store axes limit
     ylim = ax.get_ylim()
@@ -1051,7 +1061,7 @@ def view_link_horizon(
         hcs=txcs,
     )
     datatx = abs(
-        datatx.isel(**{k: v for k, v in data_kwargs.items() if k in datatx.dims})
+        datatx.sel(**{k: v for k, v in data_kwargs.items() if k in datatx.dims})
         .sel(polarization="apolar")
         .squeeze(),
     )
@@ -1059,7 +1069,7 @@ def view_link_horizon(
     # Get RX gain
     datarx = rx.request_data(theta=thslice, phi=0 * ureg.degree, hcs=rxcs)
     rdata_kwargs = {k: v for k, v in data_kwargs.items() if k in datarx.dims}
-    datarx = datarx.isel(**rdata_kwargs)
+    datarx = datarx.sel(**rdata_kwargs)
     totrx = abs(datarx.sel(polarization="apolar").squeeze())
 
     # Get copol gain for rx if polarization present default to apolar if not present
@@ -1077,7 +1087,7 @@ def view_link_horizon(
         )
 
         # Compute RX gain in terms of incident polarization
-        copolrx = abs((copolrx * incident_pol).sum(dim="polarization").squeeze())
+        copolrx = abs((copolrx * res.incident_pol).sum(dim="polarization").squeeze())
 
     else:
         copolrx = totrx
@@ -1092,7 +1102,7 @@ def view_link_horizon(
 
     # Make TX pattern
     gtx = rtx * np.sin(rtx.theta) + ax.get_lines()[lcidx + 2].get_xdata()
-    gty = rtx * np.cos(rtx.theta) / yscale + ax.get_lines()[lcidx + 2].get_ydata()
+    gty = rtx * np.cos(rtx.theta) + ax.get_lines()[lcidx + 2].get_ydata()
     ax.plot(gtx, gty, color="C0", lw=0.8, label="TX Gain")
     ax.fill(
         gtx,
@@ -1103,13 +1113,16 @@ def view_link_horizon(
         linewidth=0.8,
     )
 
+    # Try a circle
+    # gtx = 200 * np.sin(rtx.theta) + ax.get_lines()[lcidx + 2].get_xdata()
+    # gty = 200 * np.cos(rtx.theta) + ax.get_lines()[lcidx + 2].get_ydata()
+    # ax.plot(gtx, gty, color="C1", lw=0.8, label="TX Gain")
+
     # Make Pattern Note that Rx points in negative x
     # Modify theta based on local RX horizon angle to account for local horizon
-    gtrx = rtrx * np.sin(-rtrx.theta + rx_angle_global) + ax.get_lines()[lcidx + 3].get_xdata()
-    gtry = (
-        rtrx * np.cos(-rtrx.theta + rx_angle_global) / yscale
-        + ax.get_lines()[lcidx + 3].get_ydata()
-    )
+    gtrx = rtrx * np.sin(-rtrx.theta + tilt_angle_rad) + ax.get_lines()[lcidx + 3].get_xdata()
+    gtry = rtrx * np.cos(-rtrx.theta + tilt_angle_rad) + ax.get_lines()[lcidx + 3].get_ydata()
+
     ax.plot(
         gtrx,
         gtry,
@@ -1127,10 +1140,8 @@ def view_link_horizon(
         linewidth=0.8,
     )
 
-    grx = rrx * np.sin(-rrx.theta + rx_angle_global) + ax.get_lines()[lcidx + 3].get_xdata()
-    gry = (
-        rrx * np.cos(-rrx.theta + rx_angle_global) / yscale + ax.get_lines()[lcidx + 3].get_ydata()
-    )
+    grx = rrx * np.sin(-rrx.theta + tilt_angle_rad) + ax.get_lines()[lcidx + 3].get_xdata()
+    gry = rrx * np.cos(-rrx.theta + tilt_angle_rad) + ax.get_lines()[lcidx + 3].get_ydata()
     ax.plot(grx, gry, color="C0", lw=0.8, label="RX Co-Pol Gain")
     ax.fill(
         grx,
@@ -1154,6 +1165,7 @@ def view_link_horizon(
     tx_gain.data = tx_gain.data.to("dB")
     rx_gain = res.rx_gain
     rx_gain.data = rx_gain.data.to("dB")
+    prop_loss = res.prop_loss
     prop_loss.data = prop_loss.data.to("dB")
 
     # place a text box in upper left in axes coords
@@ -1180,7 +1192,7 @@ def view_link_horizon(
     ax.text(
         ax.get_lines()[lcidx + 3].get_xdata().item(),
         ypos,
-        f"RX Gain: {rx_gain.item().magnitude:.2f} dB\nRX Power: {res.item().to('dBm').magnitude:.2f} dBm",
+        f"RX Gain: {rx_gain.item().magnitude:.2f} dB\nRX Power: {res.rx_power.item().to('dBm').magnitude:.2f} dBm",
         transform=ax.transData,
         fontsize=fontsize,
         verticalalignment="center",

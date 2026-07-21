@@ -55,8 +55,9 @@ def get_linkres(setuptxrx_apolar):
 
 def test_apolar_prop(get_linkres):
     tx, rx, res_fspl, res_itm = get_linkres
-    assert_allclose(res_fspl[1].data, res_itm[1].fspl.data, rtol=1e-3)
-    assert_allclose(res_fspl[0].data, res_itm[0].data, rtol=1e-3)
+
+    assert_allclose(res_fspl[0].prop_loss, res_itm[0].fspl, rtol=1e-3)
+    assert_allclose(res_fspl[0].rx_power, res_itm[0].rx_power, rtol=1e-3)
 
 
 def test_plot_pd(setuptxrx_apolar):
@@ -76,4 +77,4 @@ def test_plot_pd(setuptxrx_apolar):
 def test_plot_horizon(get_linkres):
     tx, rx, res_fspl, res_itm = get_linkres
 
-    ax = view_link_horizon(tx, rx, res_itm[0], res_itm[2], res_itm[1], gsize=0.02)
+    ax = view_link_horizon(tx, rx, res_itm[0], gsize=0.02)

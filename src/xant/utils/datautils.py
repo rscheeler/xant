@@ -217,6 +217,4 @@ def pad_data(
     # Concat and sort
     result = xr.concat([da_neg_theta, da], dim=theta_dim, join="outer")
     result = result.sortby([theta_dim, phi_dim])
-    # Now interpolation ready, store attribute
-    result.attrs["interp_ready"] = True
     return result

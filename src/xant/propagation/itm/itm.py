@@ -408,7 +408,7 @@ def longley_rice(
     if abs(theta_hzn[0]) > 200e-3:
         warnings.warn("TX horizon angle is large - small angle approximations could break down")
     if abs(theta_hzn[1]) > 200e-3:
-        warnings.warn("RX horizon angle is large - small angel approximations could break down")
+        warnings.warn("RX horizon angle is large - small angle approximations could break down")
 
     # Checks that the actual horizon distance can't be less than 1/10 of the smooth earth horizon distance
     if d_hzn__meter[0] < 0.1 * d_hzn_s__meter[0]:
