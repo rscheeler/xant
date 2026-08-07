@@ -1008,19 +1008,66 @@ def view_link_horizon(
         los_c = "r"
     ax.plot(sl_x, sl, f"{los_c}-", lw=lw)
     for fscl, fls in zip([1, 0.6], ["-", "--"], strict=False):
-        fresnel_radius = fscl * np.sqrt(2 * wavelength * sl_dist * (1 - (sl_dist / sl_dist[-1])))
-        fresnel_radius_x = sl_x * np.cos(los_ang) - fresnel_radius * np.sin(los_ang)
-        fresnel_radius_py = sl_x * np.sin(los_ang) + fresnel_radius * np.cos(los_ang) + sl[0]
-        fresnel_radius_ny = sl_x * np.sin(los_ang) - fresnel_radius * np.cos(los_ang) + sl[0]
-        fresnel_line = LineString(
-            [(x, y) for x, y in zip(fresnel_radius_x, fresnel_radius_ny, strict=False)],
+        # 1st Fresnel zone radius
+        # https://en.wikipedia.org/wiki/Fresnel_zone
+        fresnel_radius = fscl * np.sqrt(wavelength * sl_dist * (1 - (sl_dist / sl_dist[-1])))
+
+        # Perpendicular offsets based on the LOS line angle
+        dx = fresnel_radius * np.sin(los_ang)
+        dy = fresnel_radius * np.cos(los_ang)
+
+        # Upper and lower boundary points
+        fresnel_x_upper = sl_x - dx
+        fresnel_y_upper = sl + dy
+
+        fresnel_x_lower = sl_x + dx
+        fresnel_y_lower = sl - dy
+
+        # Create LineStrings for intersection testing
+        fresnel_lower_line = LineString(
+            [(x, y) for x, y in zip(fresnel_x_lower, fresnel_y_lower, strict=False)],
+        )
+        fresnel_upper_line = LineString(
+            [(x, y) for x, y in zip(fresnel_x_upper, fresnel_y_upper, strict=False)],
         )
 
-        frc = "C7"
-        if fresnel_line.intersects(surface_line):
-            frc = "C1"
-        ax.plot(fresnel_radius_x, fresnel_radius_py, f"{frc}{fls}", lw=lw)
-        ax.plot(fresnel_radius_x, fresnel_radius_ny, f"{frc}{fls}", lw=lw)
+        # Check for terrain intersections and mark them
+        intersects_terrain = False
+        for f_line in [fresnel_lower_line, fresnel_upper_line]:
+            if f_line.intersects(surface_line):
+                intersects_terrain = True
+                intersection = f_line.intersection(surface_line)
+
+                # Handle single vs. multiple intersection points (Point vs. MultiPoint/GeometryCollection)
+                if hasattr(intersection, "geoms"):  # MultiPoint or GeometryCollection
+                    ix_coords = [p.coords[0] for p in intersection.geoms if p.geom_type == "Point"]
+                elif intersection.geom_type == "Point":
+                    ix_coords = [intersection.coords[0]]
+                else:
+                    ix_coords = []
+
+                # Plot intersection markers
+                if ix_coords:
+                    ix_x, ix_y = zip(*ix_coords)
+                    ax.scatter(
+                        ix_x,
+                        ix_y,
+                        color="none",
+                        marker="o",
+                        edgecolors="C1",
+                        s=30,
+                        zorder=5,
+                        label="Zone Obstruction"
+                        if "Zone Obstruction" not in ax.get_legend_handles_labels()[1]
+                        else "",
+                    )
+
+        # Color orange/grey depending on obstruction
+        frc = "C1" if intersects_terrain else "C7"
+
+        # Plot upper and lower boundaries
+        ax.plot(fresnel_x_upper, fresnel_y_upper, f"{frc}{fls}", lw=lw)
+        ax.plot(fresnel_x_lower, fresnel_y_lower, f"{frc}{fls}", lw=lw)
 
     # Set limit
     ax.set_ylim(ylim[0], ylim[1] + (ylim[1] - ylim[0]) * limit_scale)
