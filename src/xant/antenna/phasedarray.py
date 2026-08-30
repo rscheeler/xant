@@ -849,6 +849,8 @@ def plot_grating_lobe_diagram(
     lattice_type: str = "rectangular",
     max_scan: Quantity = 60 * ureg.degree,
     figsize: tuple = (8, 8),
+    ax: plt.Axes = None,
+    title: str | None = None,
     show_pairs: bool | None = None,
 ) -> plt.Axes:
     """
@@ -885,13 +887,16 @@ def plot_grating_lobe_diagram(
     u_steer = np.sin(theta_steer) * np.cos(phi_steer)
     v_steer = np.sin(theta_steer) * np.sin(phi_steer)
 
-    fig, ax = plt.subplots(figsize=figsize)
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
     ax.set_xlim(-2, 2)
     ax.set_ylim(-2, 2)
     ax.set_xlabel("u (sin(theta)cos(phi))")
     ax.set_ylabel("v (sin(theta)sin(phi))")
+    if title is not None:
+        title = f" - {title}"
     ax.set_title(
-        f"Grating Lobe Diagram\ndx={dx:.3f~#P}λ,dy={dy:.3f~#P}λ\nMax. Scan {max_scan.to('degree').magnitude}°",
+        f"Grating Lobe Diagram{title}\ndx={dx:.3f~#P}λ,dy={dy:.3f~#P}λ\nMax. Scan {max_scan.to('degree').magnitude}°",
     )
     ax.add_patch(plt.Circle((0, 0), 1, color="C0", alpha=0.25))  # Visible region
     ax.add_patch(plt.Circle((0, 0), np.sin(max_scan), color="C0", alpha=0.25))  # Scan region
