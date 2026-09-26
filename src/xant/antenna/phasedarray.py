@@ -12,7 +12,7 @@ from hics import HCS
 from hics.plotting import viewcs
 from loguru import logger
 from matplotlib.collections import PatchCollection
-from matplotlib.patches import RegularPolygon
+from matplotlib.patches import Patch, RegularPolygon
 from pint import Quantity
 from scipy.spatial.transform import Rotation
 from xrench.units import ureg
@@ -954,6 +954,242 @@ def plot_grating_lobe_diagram(
     )  # Main beam location
 
     ax.legend()
+    ax.grid(False)
+    ax.set_aspect("equal")
+
+    return ax
+
+
+def _lens_polygon(c1, r1, c2, r2, n=80):
+    """
+    Compute the boundary of the intersection ("lens") of two circles.
+
+    Returns (xs, ys) point arrays tracing the overlap region, or None if the
+    circles don't overlap at all. If one circle is fully inside the other,
+    returns the smaller circle's outline (the overlap is just that circle).
+    """
+    d = np.hypot(c2[0] - c1[0], c2[1] - c1[1])
+
+    if d >= r1 + r2 or d == 0:
+        return None  # no overlap (or concentric, which shouldn't occur here)
+
+    if d <= abs(r1 - r2):
+        # One circle is entirely inside the other -> overlap is the smaller circle.
+        small_c, small_r = (c1, r1) if r1 <= r2 else (c2, r2)
+        theta = np.linspace(0, 2 * np.pi, n)
+        return small_c[0] + small_r * np.cos(theta), small_c[1] + small_r * np.sin(theta)
+
+    # Standard circle-circle intersection points.
+    a = (r1**2 - r2**2 + d**2) / (2 * d)
+    h = np.sqrt(max(r1**2 - a**2, 0))
+    ux, uy = (c2[0] - c1[0]) / d, (c2[1] - c1[1]) / d
+    px, py = c1[0] + a * ux, c1[1] + a * uy
+    perp_x, perp_y = -uy, ux
+    ix1, iy1 = px + h * perp_x, py + h * perp_y
+    ix2, iy2 = px - h * perp_x, py - h * perp_y
+
+    theta1a = np.arctan2(iy1 - c1[1], ix1 - c1[0])
+    theta1b = np.arctan2(iy2 - c1[1], ix2 - c1[0])
+    theta2a = np.arctan2(iy1 - c2[1], ix1 - c2[0])
+    theta2b = np.arctan2(iy2 - c2[1], ix2 - c2[0])
+
+    def arc_toward(center, radius, t_start, t_end, other_center, other_radius):
+        # Try both angular directions between t_start and t_end; keep the one
+        # whose midpoint actually lies inside the other circle (i.e. the arc
+        # that bulges into the lens, not the outer one).
+        for t_end_candidate in (t_end, t_end + 2 * np.pi if t_end < t_start else t_end - 2 * np.pi):
+            thetas = np.linspace(t_start, t_end_candidate, n)
+            x = center[0] + radius * np.cos(thetas)
+            y = center[1] + radius * np.sin(thetas)
+            mid = n // 2
+            if (x[mid] - other_center[0]) ** 2 + (
+                y[mid] - other_center[1]
+            ) ** 2 <= other_radius**2 + 1e-9:
+                return x, y
+        # Fallback (shouldn't normally hit this)
+        thetas = np.linspace(t_start, t_end, n)
+        return center[0] + radius * np.cos(thetas), center[1] + radius * np.sin(thetas)
+
+    arc1_x, arc1_y = arc_toward(c1, r1, theta1a, theta1b, c2, r2)
+    arc2_x, arc2_y = arc_toward(c2, r2, theta2b, theta2a, c1, r1)
+
+    xs = np.concatenate([arc1_x, arc2_x])
+    ys = np.concatenate([arc1_y, arc2_y])
+    return xs, ys
+
+
+def plot_grating_lobe_diagram2(
+    dx: Quantity | float,
+    steering_angles: tuple,
+    *,
+    dy: Quantity | float | None = None,
+    lattice_type: str = "rectangular",
+    lattice_angle: Quantity | float | None = None,
+    max_scan: Quantity = 60 * ureg.degree,
+    figsize: tuple = (8, 8),
+    ax: plt.Axes = None,
+    title: str | None = None,
+    show_pairs: bool | None = None,
+) -> plt.Axes:
+    """
+    Plots the grating lobe diagram for a 2D phased array with grid.
+
+    The array is defined by two lattice vectors, d1 = dx*(1, 0) and
+    d2 = dy*(cos(gamma), sin(gamma)), where gamma (lattice_angle) is the angle
+    between the row and column directions. Grating lobes fall on the
+    reciprocal lattice of (d1, d2).
+
+    `dy` defaults to `dx` (a uniform-pitch lattice), so a triangular/hex
+    lattice is just "one spacing + one angle": pass dx and lattice_angle=60deg
+    and you're done, no need to set dy separately. A square lattice is the
+    same idea with lattice_angle=90deg (the default). Only pass `dy`
+    explicitly if the two lattice vectors genuinely have different lengths
+    (an anisotropic rectangular or rhombic lattice).
+
+    Parameters
+    ----------
+    dx : Quantity or float
+        Spacing along the first lattice vector, in wavelengths.
+    steering_angles : tuple
+        Tuple of steering angles (phi, theta) in degrees.
+    dy : Quantity or float, optional
+        Spacing along the second lattice vector, in wavelengths. Defaults to
+        `dx` (uniform-pitch lattice); set explicitly only for an anisotropic
+        lattice where the two vector lengths differ.
+    lattice_type : str
+        'rectangular' or 'triangular'. Only used to set a default
+        lattice_angle (90 deg or 60 deg) when lattice_angle is not given
+        explicitly.
+    lattice_angle : Quantity or float, optional
+        Angle (deg if a plain float) between the two lattice basis vectors,
+        measured from the dx-axis to the dy-direction. Overrides lattice_type
+        and lets you model any skewed/rhombic lattice, not just 90 or 60 deg.
+    max_scan : Quantity
+        Maximum scan (theta) to draw circle.
+    show_pairs : list[bool], optional
+        Which of the 8 nearest reciprocal lattice points (m, n) to draw.
+        Order is [(-1,-1), (0,-1), (1,-1), (-1,0), (1,0), (-1,1), (0,1), (1,1)].
+
+    Reference
+    ---------
+        Grating Lobe Suppression with Element Count Optimization in Planar Antenna Array,
+        https://www.scirp.org/journal/paperinformation?paperid=54250
+    """
+    # Accept plain floats as dimensionless wavelength units
+    if not isinstance(dx, Quantity):
+        dx = dx * ureg.dimensionless
+    if dy is None:
+        dy = dx
+    elif not isinstance(dy, Quantity):
+        dy = dy * ureg.dimensionless
+
+    # Resolve the lattice skew angle: explicit lattice_angle wins; otherwise
+    # fall back to the old rectangular/triangular defaults.
+    if lattice_angle is not None:
+        gamma = (
+            lattice_angle if isinstance(lattice_angle, Quantity) else lattice_angle * ureg.degree
+        )
+    elif lattice_type == "rectangular":
+        gamma = 90 * ureg.degree
+    elif lattice_type == "triangular":
+        gamma = 60 * ureg.degree
+    else:
+        raise ValueError(
+            "lattice_type must be 'rectangular' or 'triangular', or pass lattice_angle explicitly",
+        )
+
+    gamma_rad = gamma.to("radian").magnitude
+    sin_g, cos_g = np.sin(gamma_rad), np.cos(gamma_rad)
+    if np.isclose(sin_g, 0.0):
+        raise ValueError("lattice_angle cannot be 0 or 180 degrees (degenerate lattice)")
+
+    phi_steer, theta_steer = steering_angles
+    u_steer = np.sin(theta_steer) * np.cos(phi_steer)
+    v_steer = np.sin(theta_steer) * np.sin(phi_steer)
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+    ax.set_xlim(-2, 2)
+    ax.set_ylim(-2, 2)
+    ax.set_xlabel("u (sin(theta)cos(phi))")
+    ax.set_ylabel("v (sin(theta)sin(phi))")
+    title_suffix = f" - {title}" if title is not None else ""
+    ax.set_title(
+        f"Grating Lobe Diagram{title_suffix}\n"
+        f"dx={dx:.3f~#P}λ, dy={dy:.3f~#P}λ, γ={gamma.to('degree').magnitude:.1f}°\n"
+        f"Max. Scan {max_scan.to('degree').magnitude}°",
+    )
+    ax.add_patch(plt.Circle((0, 0), 1, color="C0", alpha=0.25))  # Visible region
+    ax.add_patch(plt.Circle((0, 0), np.sin(max_scan), color="C0", alpha=0.25))  # Scan region
+
+    # Reciprocal lattice vectors b1, b2 of the direct lattice (d1, d2), i.e.
+    # d1 = dx*(1,0), d2 = dy*(cos(gamma), sin(gamma)), such that d_i . b_j = delta_ij.
+    b1 = (1 / dx, -cos_g / (dx * sin_g))
+    b2 = (0 * b1[0], 1 / (dy * sin_g))
+
+    # The 8 nearest reciprocal-lattice neighbors. For gamma=90 this reproduces
+    # the old rectangular set; for gamma=60 with dx=dy it reproduces the old
+    # triangular positions (with 2 harmless redundant points, since that
+    # lattice has 6-fold symmetry in its first ring).
+    lattice_pairs = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
+    if show_pairs is None:
+        show_pairs = [True] * len(lattice_pairs)
+
+    scan_radius = float(np.sin(max_scan))
+    any_in_visible = False
+
+    for (m, n), sp in zip(lattice_pairs, show_pairs):
+        if not sp:
+            continue
+        du = m * b1[0] + n * b2[0]
+        dv = m * b1[1] + n * b2[1]
+        u_lobe = u_steer + du
+        v_lobe = v_steer + dv
+
+        # Strip units for geometry (du, dv are dimensionless Quantities)
+        du_mag = float(du.magnitude if isinstance(du, Quantity) else du)
+        dv_mag = float(dv.magnitude if isinstance(dv, Quantity) else dv)
+
+        ax.plot(u_lobe, v_lobe, "ro", markersize=5, mec="grey", mfc="white")
+        # Neutral reference circles (unfilled outlines) for this lattice point
+        ax.add_patch(
+            plt.Circle((du_mag, dv_mag), 1, fill=False, edgecolor="grey", alpha=0.6, linewidth=0.8),
+        )
+        ax.add_patch(
+            plt.Circle(
+                (du_mag, dv_mag),
+                scan_radius,
+                fill=False,
+                edgecolor="grey",
+                alpha=0.6,
+                linewidth=0.8,
+            ),
+        )
+
+        # Highlight only the part of this lobe's scan-swept circle that
+        # actually overlaps the visible region (unit circle at the origin) -
+        # i.e. where a real grating lobe will show up for some steering
+        # angle within max_scan.
+        lens = _lens_polygon((0.0, 0.0), 1.0, (du_mag, dv_mag), scan_radius)
+        if lens is not None:
+            ax.fill(*lens, color="C1", alpha=0.45, zorder=3)
+            any_in_visible = True
+
+    ax.plot(
+        u_steer,
+        v_steer,
+        "bo",
+        markersize=6,
+        mec="k",
+        mfc="white",
+        label="Main Beam",
+    )  # Main beam location
+
+    legend_handles, legend_labels = ax.get_legend_handles_labels()
+    if any_in_visible:
+        legend_handles.append(Patch(facecolor="C1", alpha=0.45))
+        legend_labels.append("Grating lobe reaches visible space")
+    ax.legend(legend_handles, legend_labels, loc="upper right", fontsize=8)
     ax.grid(False)
     ax.set_aspect("equal")
 

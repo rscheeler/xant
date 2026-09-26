@@ -367,11 +367,12 @@ def lm_fill_color(feature):
     return {"fillColor": feature["properties"]["color"], "fillOpacity": 0.5, "stroke": False}
 
 
-def plot_lm_h3(data, center):
+def plot_lm_h3(data, center, m=None):
     dh3 = data.copy()
     dh3.data = (np.abs(dh3.data) ** 2).to("dB")
     gainh3 = h3xr2gpd(dh3)
-    m = leafmap.Map(center=center, zoom=12, tiles="cartodb positron")
+    if m is None:
+        m = leafmap.Map(center=center, zoom=12, tiles="cartodb positron")
     m.add_gdf(gainh3, layer_name="Gain", style_callback=lm_fill_color)
 
     return m
