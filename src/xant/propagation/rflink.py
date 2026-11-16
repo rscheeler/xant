@@ -947,7 +947,7 @@ def view_link_horizon(
     )
 
     # Slice
-    res = res.sel(**{k: v for k, v in data_kwargs.items() if k in res.dims})
+    res = res.sel(**{k: v for k, v in data_kwargs.items() if k in res.dims}, method="nearest")
     # prop_loss = prop_loss.isel(**{k: v for k, v in data_kwargs.items() if k in prop_loss.dims})
     # incident_pol = incident_pol.isel(
     #     **{k: v for k, v in data_kwargs.items() if k in incident_pol.dims},
@@ -1108,7 +1108,7 @@ def view_link_horizon(
         hcs=txcs,
     )
     datatx = abs(
-        datatx.sel(**{k: v for k, v in data_kwargs.items() if k in datatx.dims})
+        datatx.sel(**{k: v for k, v in data_kwargs.items() if k in datatx.dims}, method="nearest")
         .sel(polarization="apolar")
         .squeeze(),
     )
@@ -1116,7 +1116,7 @@ def view_link_horizon(
     # Get RX gain
     datarx = rx.request_data(theta=thslice, phi=0 * ureg.degree, hcs=rxcs)
     rdata_kwargs = {k: v for k, v in data_kwargs.items() if k in datarx.dims}
-    datarx = datarx.sel(**rdata_kwargs)
+    datarx = datarx.sel(**rdata_kwargs, method="nearest")
     totrx = abs(datarx.sel(polarization="apolar").squeeze())
 
     # Get copol gain for rx if polarization present default to apolar if not present
