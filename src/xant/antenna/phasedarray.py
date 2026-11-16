@@ -19,10 +19,12 @@ from xrench.units import ureg
 from xrench.xrutils import apply_rotation, vector_norm
 
 from ..utils import conversions
+from .array_directivity import ArrayDirectivityMixin
+
 from .core import Antenna, AntennaFunction, concat
 
 
-class AntennaArray:
+class AntennaArray(ArrayDirectivityMixin):
     """
     Class for representing an array of antennas. Can be made up of either Antenna or
     AntennaArray elements. The array factor is calculated based on the positions of
@@ -112,6 +114,10 @@ class AntennaArray:
         self._excitation = xr.ones_like(port).astype(np.complex128)
         self._taper = xr.ones_like(port).astype(np.complex128)
         self._steering_vector = xr.ones_like(port).astype(np.complex128)
+        self._gram_cache = {}
+        self._steer_info = None
+        # Pattern normalisation of ``total``: "gain" (default), "directivity", or False (raw sum)
+        self.normalize_total = "gain"
         self.initialize()
 
     def initialize(self):
@@ -297,21 +303,44 @@ class AntennaArray:
                     dims=("port",),
                     coords=dict(port=np.arange(len(self.coordinate_systems))),
                 )
-                element = np.array([e.total for e in element])
+                element = np.array([e._raw_total for e in element])
                 element = concat(element, dict(port=port))
             elif isinstance(element, AntennaArray):
-                element = element.total
+                element = element._raw_total
             self._elements = element * self.tpf
         return self._elements
 
     @property
-    def total(self) -> Antenna:
-        """Returns the sum of the elements multiplied by their excitation."""
-        # if self._total is None:
-        self._total = (self.elements * self.excitation).sum(dim="port") / vector_norm(
-            np.abs(self.excitation),
+    def _raw_total(self) -> Antenna:
+        """Sum of the elements multiplied by their (unit-norm) excitation; no TRP normalisation."""
+        exc = self.excitation
+        total = (self.elements * exc).sum(dim="port") / vector_norm(
+            np.abs(exc),
             dim="port",
         )
+        total._array_source = (self, False)
+        return total
+
+    @property
+    def total(self) -> Antenna:
+        """
+        Radiated pattern of the array.
+
+        By default (``normalize_total = "gain"``) this is the array **gain** pattern: ``|E|^2`` follows the
+        true gain -- scan roll-off, element pattern, spacing **and the radiation efficiency carried by the
+        element patterns** -- at every steering angle, computed from the cached Gram matrix.
+
+        Options on ``array.normalize_total``:
+
+        * ``"gain"`` / ``True`` (default): ``integral|E|^2 = power radiated by the elements``.
+        * ``"directivity"``: ``integral|E|^2 = 4*pi`` (assumes lossless elements).
+        * ``False``: the raw sum ``sum(w_n E_n)/||w||`` with no scan-loss correction.
+        """
+        mode = self.normalize_total
+        if mode:
+            self._total = self.normalized_total("gain" if mode is True else mode)
+        else:
+            self._total = self._raw_total
         return self._total
 
     @property
@@ -330,6 +359,7 @@ class AntennaArray:
             for ecs in self.coordinate_systems:
                 ecs.reference = hcs
 
+            self._gram_cache = {}
             self.initialize()
 
             # Move the broadcasted elements, too
@@ -541,7 +571,9 @@ class AntennaArray:
             for e in el:
                 els.append(e.copy())
             el = np.array(els)
-        return AntennaArray(el, cs)
+        new = AntennaArray(el, cs)
+        new.normalize_total = self.normalize_total
+        return new
 
 
 class TranslatedPhase(Antenna):
@@ -834,6 +866,9 @@ def steer_phase_centers(
 
     # Assign to steering vector
     phased_array.steering_vector = exc
+
+    # Remember the steering direction (lets d0() start its peak search there)
+    phased_array._steer_info = (phased_array._steering_vector, p0, t0)
 
     # Initialize
     phased_array.initialize()

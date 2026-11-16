@@ -66,6 +66,8 @@ class Antenna:
 
         # Initialize variables
         self.__spline_filter = None
+        # Set by AntennaArray.total: ``(array, normalisation kind)`` so trp()/d0() use the exact whole-sphere path
+        self._array_source = None
 
     @staticmethod
     def validate(data: xr.DataArray | AntennaFunction) -> None:
@@ -701,13 +703,30 @@ class Antenna:
 
         return bw
 
-    def d0(
-        self,
-        theta=np.linspace(0, 180, 91) * ureg.degree,
-        phi=np.arange(-180, 180, 5) * ureg.degree,
-        coordinate_frame="phitheta",
-        **kwargs,
-    ):
+    def _array_dispatch(self, theta, phi, kwargs) -> bool:
+        """True if trp()/d0() of an array's ``total`` should use the array's exact path (no explicit angular grid)."""
+        return (
+            self._array_source is not None
+            and theta is None
+            and phi is None
+            and set(kwargs) <= {"frequency", "hcs"}
+        )
+
+    @staticmethod
+    def _default_grid(theta, phi):
+        theta = np.linspace(0, 180, 91) * ureg.degree if theta is None else theta
+        phi = np.arange(-180, 180, 5) * ureg.degree if phi is None else phi
+        return theta, phi
+
+    def d0(self, theta=None, phi=None, coordinate_frame="phitheta", **kwargs):
+        """
+        Peak directivity on an equispaced ``theta``/``phi`` grid (rectangle rule; the grid must resolve the beam).
+
+        For the ``total`` of an :class:`AntennaArray`, called without a grid, the exact array result is returned.
+        """
+        if self._array_dispatch(theta, phi, kwargs):
+            return self._array_source[0].d0(frequency=kwargs.get("frequency"))
+        theta, phi = self._default_grid(theta, phi)
         dat = self.request_data(theta=theta, phi=phi, coordinate_frame=coordinate_frame, **kwargs)
         dat = dat.sel(polarization="apolar")
         u = np.abs(dat) ** 2
@@ -717,21 +736,23 @@ class Antenna:
         trp = dat.sum(dim=["theta", "phi"])
         return 4 * np.pi * u.max(dim=["theta", "phi"]) / trp
 
-    def trp(
-        self,
-        theta=np.linspace(0, 180, 91) * ureg.degree,
-        phi=np.arange(-180, 180, 5) * ureg.degree,
-        coordinate_frame="phitheta",
-        **kwargs,
-    ):
+    def trp(self, theta=None, phi=None, coordinate_frame="phitheta", **kwargs):
+        """
+        Total radiated power on an equispaced ``theta``/``phi`` grid (rectangle rule).
+
+        For the ``total`` of an :class:`AntennaArray`, called without a grid, the exact array result is returned.
+        """
+        if self._array_dispatch(theta, phi, kwargs):
+            arr, kind = self._array_source
+            return arr._total_trp(kind, frequency=kwargs.get("frequency"))
+        theta, phi = self._default_grid(theta, phi)
         dat = self.request_data(theta=theta, phi=phi, coordinate_frame=coordinate_frame, **kwargs)
         dat = dat.sel(polarization="apolar")
         u = np.abs(dat) ** 2
         dth = np.diff(theta).mean().to("radian").magnitude
         dph = np.diff(phi).mean().to("radian").magnitude
         dat = u * np.sin(dat.theta) * dth * dph
-        trp = dat.sum(dim=["theta", "phi"])
-        return trp
+        return dat.sum(dim=["theta", "phi"])
 
     def phase_center(
         self,
@@ -944,6 +965,9 @@ class OperatorFunction(AntennaFunction):
                 selfdata = selfdata.squeeze(dim="polarization")
                 selfdata = selfdata.drop_vars("polarization")
 
+        elif callable(self.other):
+            # Lazily evaluated operand (e.g. array gain normalisation that tracks the current weights)
+            otherdata = self.other(*args, **kwargs)
         else:
             otherdata = self.other
 
