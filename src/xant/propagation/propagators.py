@@ -60,6 +60,7 @@ def fspl(
         # Convert to base units
         prop_loss.data = prop_loss.data.to_base_units()
         if isinstance(additional_loss, xr.DataArray):
+            additional_loss = additional_loss.copy()
             additional_loss.data = additional_loss.data.to_base_units()
         else:
             additional_loss = additional_loss.to_base_units()
@@ -76,7 +77,7 @@ def fspl(
     return prop_loss
 
 
-def mask_los(prop_loss: xr.DataArray, txcs: HCS, rxcs: HCS):
+def mask_los(prop_loss: xr.DataArray, txcs: HCS, rxcs: HCS, k_factor: float = 1.0):
     """
     Masks the path loss based on approximation for the radar line-of-sight. Note, this assumes the ground height is the
     same for transmit and receive so it is just an approximation. For a more accurate line-of-sight model utilize a
@@ -90,6 +91,9 @@ def mask_los(prop_loss: xr.DataArray, txcs: HCS, rxcs: HCS):
         Coordinate system of the transmitter
     rxcs : HCS
         Coordinate system of the receiver
+    k_factor : float
+        Effective earth radius factor. 1.0 is the geometric horizon, 4/3 the standard-atmosphere radio horizon for
+        terrestrial paths.
 
     References:
     ----------
@@ -122,8 +126,10 @@ def mask_los(prop_loss: xr.DataArray, txcs: HCS, rxcs: HCS):
     htx.data = htx.data.to("m").magnitude
     ha.data = ha.data.to("m").magnitude
 
-    # Compute the horizon distance
-    dlos = 3.57 * ureg.km * (np.sqrt(htx) + np.sqrt(ha))
+    # Exact tangent length to a sphere, sqrt(h * (2 * R + h)). The usual 3.57 * sqrt(h) shortcut drops the h**2
+    # term, which is fine for towers but is 2% short at 550 km and a factor of two short at GEO.
+    re = k_factor * 6371008.8
+    dlos = (np.sqrt(htx * (2 * re + htx)) + np.sqrt(ha * (2 * re + ha))) * ureg.m
 
     # Mask the propagation loss if it is greater than the horizon distance
     mask = prop_loss.distance > dlos
@@ -173,6 +179,10 @@ def itm_rflink(
         kwargs["situation"] = [50]
     elif "confidence" in kwargs:
         kwargs["situation"] = kwargs.pop("confidence")
+    # Broadcast mode of variability unless the caller chooses another
+    kwargs.setdefault("mdvar", 3)
+    if clutter_method == ClutterMethods.ITURP2108:
+        logger.warning("ClutterMethods.ITURP2108 is not wired into itm_rflink yet; no clutter loss is applied.")
 
     # Determine surface profile
 
@@ -238,7 +248,8 @@ def itm_rflink(
             # 6=maritime temperate overland,
             # 7=maritime temperate, oversea (5 is the default)
             # Get climate data from mid point
-            climate = round(CLIMATE_ZONES.interp(lat=lat_mid, lon=lon_mid).item())
+            # Zones are category codes: take the nearest cell, never interpolate between codes
+            climate = round(CLIMATE_ZONES.sel(lat=lat_mid, lon=lon_mid, method="nearest").item())
 
             # Surface refractivity (N-units): also controls effective Earth radius - get from mid point
             N0 = REFRACTIVITY.interp(lat=lat_mid, lon=lon_mid).item()
@@ -261,7 +272,6 @@ def itm_rflink(
                     polv,
                     _GND_EPS[gnd],
                     _GND_SGM[gnd],
-                    mdvar=3,
                     **kwargs,
                 )
                 attrs = res.attrs
@@ -291,7 +301,8 @@ def itm_rflink(
         # 6=maritime temperate overland,
         # 7=maritime temperate, oversea (5 is the default)
         # Get climate data from mid point
-        climate = round(CLIMATE_ZONES.interp(lat=lat_mid, lon=lon_mid).item())
+        # Zones are category codes: take the nearest cell, never interpolate between codes
+        climate = round(CLIMATE_ZONES.sel(lat=lat_mid, lon=lon_mid, method="nearest").item())
 
         # Surface refractivity (N-units): also controls effective Earth radius - get from mid point
         N0 = REFRACTIVITY.interp(lat=lat_mid, lon=lon_mid).item()
@@ -309,7 +320,6 @@ def itm_rflink(
                 polv,
                 _GND_EPS[gnd],
                 _GND_SGM[gnd],
-                mdvar=3,
                 **kwargs,
             )
             # user_params, surface_profile.data.magnitude, gnd=gnd)
@@ -343,6 +353,7 @@ def itm_rflink(
         # Convert to base units
         itm_res.data = itm_res.data.to_base_units()
         if isinstance(additional_loss, xr.DataArray):
+            additional_loss = additional_loss.copy()
             additional_loss.data = additional_loss.data.to_base_units()
         else:
             additional_loss = additional_loss.to_base_units()
@@ -354,3 +365,8 @@ def itm_rflink(
         itm_res.data = itm_res.data.to("dB")
 
     return itm_res
+
+
+# Satellite / 3GPP propagators live in satcom.py; re-exported here so calculate_spatial_link(propagation="...")
+# finds them by name.
+from .satcom import earth_space_itur, lms_p681, ntn_tr38811, tr38901  # noqa: E402

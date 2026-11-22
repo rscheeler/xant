@@ -230,12 +230,12 @@ def tothetaphi(
 
     # 2. Compute pseudo-inverse. We use temporary dimension names for the output core
     # so xarray doesn't accidentally bind the old coordinates to the new axis sizes.
+    # np.linalg.pinv already broadcasts over leading dimensions, so no per-point Python loop (vectorize=True)
     A_inv = xr.apply_ufunc(
         np.linalg.pinv,
         A_forward,
         input_core_dims=[["new_polarization", "polarization"]],
         output_core_dims=[["target_pol", "source_pol"]],
-        vectorize=True,
     )
 
     # 3. Safely map the correct coordinate string arrays to our temporary dimensions

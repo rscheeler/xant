@@ -12,6 +12,20 @@ from .core import Antenna, AntennaFunction
 from .phasedarray import AntennaArray
 
 
+def _dipole_q(kl):
+    """Q of Balanis (4-75a) for a centre-fed dipole of electrical length ``kl`` [rad]; elementwise."""
+    C = 0.5772156649015328
+    si_kl, ci_kl = sici(kl)
+    si_2kl, ci_2kl = sici(2 * kl)
+    return (
+        C
+        + np.log(kl)
+        - ci_kl
+        + 0.5 * np.sin(kl) * (si_2kl - 2 * si_kl)
+        + 0.5 * np.cos(kl) * (C + np.log(kl / 2) + ci_2kl - 2 * ci_kl)
+    )
+
+
 class Dipole(Antenna):
     """Dipole antenna pattern."""
 
@@ -127,8 +141,12 @@ class Dipole(Antenna):
         # Set nans to 0
         etot = etot.fillna(0)
 
-        # Scale by directivity
-        etot = etot * np.sqrt(self._dipole_d0)
+        # Scale so that |E|^2 is the directivity pattern: U(theta) = 2 F(theta) / Q (Balanis 4-75), which peaks
+        # at D0 for every length. (Scaling the raw pattern factor by sqrt(D0) is only right for a half-wave
+        # dipole, whose pattern factor happens to peak at 1.) Q is evaluated at the requested frequencies.
+        kl = k * self.l
+        kl.data = kl.data.to_base_units().magnitude
+        etot = etot * np.sqrt(2.0 / xr.apply_ufunc(_dipole_q, kl))
 
         return etot
 
@@ -311,8 +329,10 @@ class Cosine(Antenna):
 
     def _antenna_func(self, frequency=None, phi=None, theta=None, **kwargs):
         """Cardioid radiation pattern."""
-        # Cardioid pattern
-        data = np.cos(xr.ones_like(frequency * phi * theta) * theta) ** (self.n / 2)
+        # cos^(n/2) field (cos^n power) in the forward hemisphere only; without the clip even n/2 gives a full
+        # back lobe and odd n/2 gives NaN behind the element
+        cth = np.cos(xr.ones_like(frequency * phi * theta) * theta)
+        data = cth.clip(min=0) ** (self.n / 2)
 
         # Assign polarization dim
         data = data.assign_coords(dict(polarization="apolar"))
@@ -671,7 +691,8 @@ class TE10Aperture(Antenna):
         # Scale based on areal directivity
         adir = np.sqrt(4 * np.pi * (self.a * self.b) / lam**2)
         adir.data = adir.data.to_base_units().magnitude
-        etot *= adir / max_field
+        # A TE10 (cosine) illumination has an aperture efficiency of 8 / pi^2 relative to uniform
+        etot *= adir * np.sqrt(8 / np.pi**2) / max_field
 
         return etot
 

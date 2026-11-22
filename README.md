@@ -119,16 +119,16 @@ rx_cs = HCS.from_crs((40.020 * ureg.degree, -105.24 * ureg.degree,  10 * ureg.m)
 tx = Isotropic(frequency=freq, hcs=tx_cs)
 rx = Isotropic(frequency=freq, hcs=rx_cs)
 
-rx_power, prop_loss, incident_pol, txcs, rxcs = calculate_spatial_link(
+res, txcs, rxcs = calculate_spatial_link(
     tx, power=1 * ureg.watt, rx=rx, propagation="fspl"
 )
-print(rx_power)  # received power in dBm
+print(res.rx_power)  # received power in dBm; res also holds tx_gain, rx_gain, prop_loss, incident_pol
 ```
 
 ### Terrain-aware propagation with ITM
 
 ```python
-rx_power, prop_loss, incident_pol, txcs, rxcs = calculate_spatial_link(
+res, txcs, rxcs = calculate_spatial_link(
     tx,
     power=1 * ureg.watt,
     rx=rx,
@@ -138,6 +138,41 @@ rx_power, prop_loss, incident_pol, txcs, rxcs = calculate_spatial_link(
     situation=[50],       # confidence percentile
 )
 ```
+
+### Satellite and 3GPP propagation
+
+Satellite links use the same call. The elevation angle is worked out from the two coordinate systems and each
+model's terms (clutter, gases, rain, ...) come back as coordinates on `prop_loss`.
+
+```python
+sat_cs = HCS.from_crs((40.0 * ureg.degree, -105.0 * ureg.degree, 600 * ureg.km), hagl=False)
+sat = Isotropic(frequency=freq, hcs=sat_cs)
+
+# 3GPP TR 38.811: free space + shadow fading + clutter at 90 % of locations (+ gases, scintillation)
+res, _, _ = calculate_spatial_link(
+    sat, power=1 * ureg.watt, rx=rx, propagation="ntn_tr38811",
+    scenario="urban",        # "dense_urban", "urban", "suburban", "rural"
+    los="mixture",           # True, False, or "mixture" (LOS probability of Table 6.6.1-1)
+    location=90,             # loss not exceeded at this % of locations
+    atmosphere=True,         # standard-atmosphere gases (atmosphere backend, default needs `pip install xant[itur]`)
+    scintillation=True,
+)
+
+# ITU-R P.618 / P.676 / P.840 site-specific slant path, exceeded 0.1 % of the year (atmosphere backend, default needs `xant[itur]`)
+res, _, _ = calculate_spatial_link(sat, power=1 * ureg.watt, rx=rx, propagation="earth_space_itur", p=0.1)
+
+# ITU-R P.681 roadside tree shadowing for land-mobile terminals, fade exceeded over 10 % of the route
+res, _, _ = calculate_spatial_link(sat, power=1 * ureg.watt, rx=rx, propagation="lms_p681", percent_exceeded=10)
+```
+
+The underlying formulas are plain numpy functions in `xant.propagation.satcom` (`ntn_excess_loss`,
+`p681_roadside_tree_shadowing`, `tr38901_path_loss`, `atmosphere_slant_path`, ...) for use outside a link calculation.
+
+Only the atmospheric terms (gases, cloud, rain, slant-path scintillation) need an extra package. They go through a
+pluggable backend whose default wraps [ITU-Rpy](https://github.com/inigodelportillo/ITU-Rpy) (`pip install xant[itur]`).
+To use your own model, implement `gas_standard(f_ghz, elevation_deg)` and
+`slant_path(lat, lon, f_ghz, elevation, p, antenna_diameter_m)` (see `satcom.AtmosphereBackend`) and call
+`satcom.set_atmosphere_backend(my_backend)`.
 
 ### Transmit power density map
 
@@ -166,7 +201,7 @@ Visualize the link geometry, terrain profile, Fresnel zones, and antenna gain pa
 ```python
 from xant.propagation.rflink import view_link_horizon
 
-ax = view_link_horizon(tx, rx, rx_power, incident_pol, prop_loss,gsize=.02)
+ax = view_link_horizon(tx, rx, res, gsize=.02)
 ```
 
 ### Load and export measured patterns
@@ -257,7 +292,11 @@ apply_taper(array, window=np.kaiser(N, beta=6), dim="x")
 |-----------:|:------------|
 | `fspl` | Free-space path loss |
 | `itm_rflink` | ITM terrain propagation, H/V polarization-resolved, configurable reliability/confidence percentiles and ground type |
-| `mask_los` | Mask path loss beyond the radio horizon |
+| `mask_los` | Mask path loss beyond the geometric horizon (exact at satellite altitudes) |
+| `ntn_tr38811` | 3GPP TR 38.811 satellite / HAPS: FSPL + shadow fading + clutter by scenario and elevation, optional gases and scintillation |
+| `earth_space_itur` | Site-specific ITU-R slant path (P.676 gases, P.840 cloud, P.618 rain and scintillation) via the atmosphere backend (default `itur`), optional P.2108 earth-space clutter |
+| `lms_p681` | ITU-R P.681 roadside tree shadowing for land-mobile-satellite, 0.8-20 GHz |
+| `tr38901` | 3GPP TR 38.901 terrestrial RMa / UMa / UMi / InH, 0.5-100 GHz |
 
 ITM ground types: `"poor"`, `"average"`, `"good"`, `"fresh_water"`
 

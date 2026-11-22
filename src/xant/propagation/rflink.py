@@ -418,6 +418,7 @@ def transmit_power_density(
     mask_los: bool = True,
     hagl=False,
     convert_kwargs: dict | None = None,
+    propagation_kwargs: dict | None = None,
     **kwargs,
 ) -> xr.DataArray:
     """
@@ -440,6 +441,8 @@ def transmit_power_density(
         Propagation model to use
     mask_los : bool
         Mask the line of sight with nans
+    propagation_kwargs : dict
+        Extra keyword arguments for the propagation model (e.g. ``dict(scenario="urban", location=90)``)
     **kwargs : dict
         Extra kwargs to be passed to antenna data request
     """
@@ -478,6 +481,7 @@ def transmit_power_density(
         txcs=tx.hcs,
         rxcs=rxcs,
         frequency=data.frequency * ureg.Hz,
+        **(propagation_kwargs or {}),
     )
     prop_loss.data = prop_loss.data.to_base_units()
 

@@ -32,6 +32,9 @@ dependencies = [
     "xrench>=0.1.2",
 ]
 
+[project.optional-dependencies]
+itur = ["itur>=0.4"]
+
 [dependency-groups]
 dev = [
     "mypy >=1.16.1",

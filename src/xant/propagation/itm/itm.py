@@ -265,10 +265,11 @@ def find_horizons(pfl, a_e__meter):
     d_hzn = [d__meter, d__meter]
     if theta_tx.max() > theta_hzn[0]:
         theta_hzn[0] = theta_tx.max().item()
-        d_hzn[0] = d_tx__meter.isel(distance=theta_tx.argmax()).item()
+        # theta_tx is computed on pfl[1:-1], so index the same slice of distances
+        d_hzn[0] = d_tx__meter[1:-1].isel(distance=theta_tx.argmax()).item()
     if theta_rx.max() > theta_hzn[1]:
         theta_hzn[1] = theta_rx.max().item()
-        d_hzn[1] = d_rx__meter.isel(distance=theta_rx.argmax()).item()
+        d_hzn[1] = d_rx__meter[1:-1].isel(distance=theta_rx.argmax()).item()
 
     return np.array(theta_hzn), np.array(d_hzn)
 
@@ -321,7 +322,7 @@ def pfl_extraction(pfl, gamma_e):
     delta_h = terrain_variability(pfl, d_start, d_end)
 
     # Initialized he
-    he = np.array([pfl.txagl, pfl.rxagl])
+    he = np.array([pfl.txagl, pfl.rxagl], dtype=float)
 
     if d_hzn.sum() > 1.5 * dmeter:
         # The combined horizon distance is at least 50% larger than the total path distance
@@ -338,7 +339,7 @@ def pfl_extraction(pfl, gamma_e):
             q = (dmeter / combined_horizons) ** 2
             he *= q
             d_hzn = np.sqrt(2.0 * he * ae) * np.exp(
-                -0.07 * np.sqrt(*delta_h / np.max((he, np.array([5.0] * 2)), axis=0)),
+                -0.07 * np.sqrt(delta_h / np.max((he, np.array([5.0] * 2)), axis=0)),
             )
 
         q = np.sqrt(2 * he * ae)
@@ -358,15 +359,16 @@ def pfl_extraction(pfl, gamma_e):
 
 def fit_lstsq(da, start, end):
     """
-    Least-squares fit for DataArray.
+    Least-squares line through ``da`` between ``start`` and ``end``, returned as the value of that line at the two
+    ends of the *whole* profile (as NTIA's LinearLeastSquaresFit / zlsq1 does), not at the ends of the fit window.
     """
     # Downselect data
     downsel = da.loc[start:end]
     # Get coefficients
     fitparams = downsel.polyfit("distance", 1).polyfit_coefficients
     # Find y1 and y2
-    y1 = fitparams[0].item() * downsel.distance[0].item() + fitparams[1].item()
-    y2 = fitparams[0].item() * downsel.distance[-1].item() + fitparams[1].item()
+    y1 = fitparams[0].item() * da.distance[0].item() + fitparams[1].item()
+    y2 = fitparams[0].item() * da.distance[-1].item() + fitparams[1].item()
 
     return y1, y2
 
@@ -593,7 +595,7 @@ def longley_rice(
 
         # Compute the troposcatter loss at the two distances
         h0 = -1
-        A_6__db = troposcatter_loss(
+        A_6__db, h0 = troposcatter_loss(
             d_6__meter,
             theta_hzn,
             d_hzn__meter,
@@ -604,7 +606,7 @@ def longley_rice(
             theta_los,
             h0,
         )
-        A_5__db = troposcatter_loss(
+        A_5__db, h0 = troposcatter_loss(
             d_5__meter,
             theta_hzn,
             d_hzn__meter,
@@ -940,7 +942,7 @@ def troposcatter_loss(
     h0,
 ):
     """
-    Troposcatter loss
+    Troposcatter loss. Returns ``(loss_db, h0)``.
     """
     # wavenumber, k
     wn = f__mhz / 47.7
@@ -963,7 +965,7 @@ def troposcatter_loss(
         r_2 = 2.0 * wn * theta * h_e__meter[1]
 
         if r_1 < 0.2 and r_2 < 0.2:
-            return 1001  # "If both r_1 and r_2 are less than 0.2 the function A_scat is not defined (or is infinite)" [Algorithm, page 11]
+            return 1001, h0  # "If both r_1 and r_2 are less than 0.2 the function A_scat is not defined (or is infinite)" [Algorithm, page 11]
 
         s = (d__meter - ad) / (d__meter + ad)  # asymmetry parameter
 
@@ -1008,12 +1010,13 @@ def troposcatter_loss(
     D_0__meter = 40e3  # [Algorithm, 6.8]
 
     H__meter = 47.7  # [Algorithm, 4.63]
+    # h0 is returned so the caller can pass the d_6 value into the d_5 evaluation
     return (
         ff_function(th * d__meter)
         + 10 * np.log10(wn * H__meter * th**4)
         - 0.1 * (N_s - 301.0) * np.exp(-th * d__meter / D_0__meter)
         + H_0
-    )
+    ), h0
     # [Algorithm, 4.63]
 
 

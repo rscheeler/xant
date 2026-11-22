@@ -123,7 +123,7 @@ class Antenna:
             # Determine data polarization basis
             polbasis = polarization.getpolbasis(data)
             # Use cartesian as the preferred basis convert if needed
-            if polbasis != "xyz":
+            if polbasis not in ("xyz", "apolar"):
                 data = polarization.project_polarizations(
                     data,
                     pol_converters=[polarization.thetaphi2xyz],
@@ -310,22 +310,18 @@ class Antenna:
             # We check if the diffs are all the same
             diffs = np.diff(coord_vals)
             if np.allclose(diffs, diffs[0]):
-                dv = diffs[0]
-                mn = coord_vals.min()
-                idxs.append((v_raw - mn) / dv)
+                # Index is measured from the first sample so descending grids work too
+                idxs.append((v_raw - coord_vals[0]) / diffs[0])
 
-            # Case C: Monotonic but Non-Uniform
+            # Case C: Monotonic but Non-Uniform -> fractional index by linear interpolation of the
+            # sample positions, so the spline sees a true (piecewise-linear) index instead of the nearest sample
             elif np.all(diffs > 0) or np.all(diffs < 0):
-                # Find insertion point
-                side = "left" if diffs[0] > 0 else "right"
-                idx = np.searchsorted(coord_vals, v_raw, side=side)
-                # Clip to bounds and adjust for nearest neighbor
-                idx = np.clip(idx, 1, len(coord_vals) - 1)
-                # Check if left or right is closer
-                left = coord_vals[idx - 1]
-                right = coord_vals[idx]
-                idx = np.where(np.abs(v_raw - left) < np.abs(v_raw - right), idx - 1, idx)
-                idxs.append(idx.astype(np.float64))
+                pos = np.arange(coord_vals.size, dtype=np.float64)
+                if diffs[0] > 0:
+                    idx = np.interp(v_raw, coord_vals, pos)
+                else:
+                    idx = np.interp(v_raw, coord_vals[::-1], pos[::-1])
+                idxs.append(np.asarray(idx, dtype=np.float64))
 
             # Case D: Truly Arbitrary (Parallelized via Numba)
             else:
@@ -367,10 +363,15 @@ class Antenna:
         coordinate_frame: str | None = None,
         hcs: HCS | None = None,
         convert_kwargs: dict | None = None,
+        _project: bool = True,
         **kwargs,
     ) -> xr.DataArray:
         """
         Returns gridded data in the desired coordinate frame.
+
+        ``_project`` is internal: operator / concat nodes request their operands with ``_project=False`` so the
+        projection onto every polarization basis is done once, at the top of the expression tree, instead of at
+        every node.
 
         Parameters
         ----------
@@ -637,8 +638,9 @@ class Antenna:
         if not set(conversions.COORDINATE_DIMS[data.coordinate_frame]).issubset(data.dims):
             for d in conversions.COORDINATE_DIMS[data.coordinate_frame]:
                 data = data.assign_coords({d: kwargs[d]})
-        # Project all the polarizations
-        data = polarization.project_polarizations(data, convert_kwargs)
+        # Project all the polarizations (only at the top of an expression tree)
+        if _project:
+            data = polarization.project_polarizations(data, convert_kwargs)
 
         # Some pint/xarray issues just force if not a quantity
         if not isinstance(data.data, pint.Quantity):
@@ -678,28 +680,40 @@ class Antenna:
         # Slice the data
         slc = self.request_data(**{dim: angles, "coordinate_frame": coordinate_frame}, **kwargs)
 
-        # Normalize
-        slc = abs(slc).sel(polarization="apolar")
-        slc /= slc.max()
+        # Normalised power along the cut
+        slc = abs(slc).sel(polarization="apolar").squeeze()
+        if slc.ndim != 1:
+            raise ValueError(
+                f"beamwidth needs a 1D cut along '{dim}'; select the other dims with kwargs (got {slc.dims}).",
+            )
+        pw = np.asarray(slc.values, dtype=float) ** 2
+        x = np.asarray(slc.coords[dim].values, dtype=float)
+        order = np.argsort(x)
+        x, pw = x[order], pw[order] / pw.max()
+        level = float(pwr.to_base_units().magnitude)
 
-        # Find 3dB points - handle omni antennas also
-        slcsearch = slc - np.sqrt(pwr.to_base_units())
-        slcsearch = abs(slcsearch.where(slcsearch <= 0))
-        if np.all(slcsearch.isnull().values):
+        # Walk outwards from the peak to the first crossing on each side and interpolate between samples.
+        # (Taking the two samples closest to the level anywhere in the cut picks up other lobes.)
+        # If several samples tie for the peak (e.g. the mirror lobe of an isotropic array at +/-180), use the
+        # one nearest the middle of the cut
+        peaks = np.nonzero(pw >= 1 - 1e-9)[0]
+        ipk = int(peaks[np.argmin(np.abs(peaks - pw.size // 2))])
+        below_r = np.nonzero(pw[ipk:] < level)[0]
+        below_l = np.nonzero(pw[: ipk + 1][::-1] < level)[0]
+        if below_r.size == 0 or below_l.size == 0:
+            # Never drops below the level on at least one side (e.g. omni cut)
             bw = angles.max() - angles.min()
         else:
-            bw = (
-                np.rad2deg(
-                    abs(
-                        slcsearch.squeeze()
-                        .sortby(slcsearch.squeeze())[:2]
-                        .coords[dim]
-                        .diff(dim)
-                        .item(),
-                    ),
-                )
-                * ureg.degree
-            )
+            ir = ipk + below_r[0]
+            il = ipk - below_l[0]
+            xr_ = np.interp(level, [pw[ir], pw[ir - 1]], [x[ir], x[ir - 1]])
+            xl_ = np.interp(level, [pw[il], pw[il + 1]], [x[il], x[il + 1]])
+            width = xr_ - xl_
+            if isinstance(angles, pint.Quantity) and angles.check("[]") and angles.units != ureg.dimensionless:
+                # coordinates come back in base units (radian) for angular cuts
+                bw = (width * ureg.radian).to("degree")
+            else:
+                bw = width * ureg.dimensionless
 
         return bw
 
@@ -939,6 +953,8 @@ class OperatorFunction(AntennaFunction):
         Function for returning antenna data
         """
         # Get self data
+        # Operands are only needed in the x, y, z (or apolar) basis; skip their projection onto every basis
+        kwargs["_project"] = False
         selfdata = self.self_patt.request_data(*args, **kwargs)
 
         # Constrain data to a single basis
@@ -967,7 +983,7 @@ class OperatorFunction(AntennaFunction):
 
         elif callable(self.other):
             # Lazily evaluated operand (e.g. array gain normalisation that tracks the current weights)
-            otherdata = self.other(*args, **kwargs)
+            otherdata = self.other(*args, **{k: v for k, v in kwargs.items() if k != "_project"})
         else:
             otherdata = self.other
 
@@ -1024,6 +1040,7 @@ class ConcatFunction(AntennaFunction):
         selantennas = self.antennas.sel({self.dim[0]: concat_coord})
 
         # Get data
+        dropped_kwargs["_project"] = False
         data = [a.request_data(*args, **dropped_kwargs) for a in selantennas.data.ravel()]
 
         # Add coord for concatenation
